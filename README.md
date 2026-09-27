@@ -9,8 +9,12 @@ A single-page, mobile-friendly workout timer and tracker for a Monday–Saturday
 - Per-set rep targets (e.g. set 2 of "15, 12, 10, 8" shows 12)
 - Timers use the wall clock, so they stay correct after the phone locks; the screen is kept awake during a workout
 - An in-progress workout survives a reload or the app being closed (for up to 3 hours)
-- Logs are stored in `localStorage` (on this device/browser only)
+- Optional lock-screen rest alert: plays the rest countdown as an audio clip, which iOS keeps playing while locked (this pauses other audio)
+- Works offline after the first visit (service worker in `sw.js`)
+- Logs are stored in `localStorage` (on this device/browser only); Export/Import writes and merges a JSON backup
 - PWA manifest so it can be added to the iPhone Home Screen
+
+When you change any cached file, bump `CACHE` in `sw.js` so installed copies pick it up.
 
 ## Running
 

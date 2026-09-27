@@ -28,6 +28,8 @@ select,input{background:white;color:#111827}select{flex:1}button{font-weight:750
 .history{margin-top:10px;padding:10px;background:#f9fafb;border-radius:12px;font-size:13px;color:#4b5563}
 .list{background:white;border:1px solid #e5e7eb;border-radius:16px;overflow:hidden}.row{display:grid;grid-template-columns:32px 1fr auto;gap:8px;padding:12px;border-bottom:1px solid #eee}.row:last-child{border:0}.current{background:#eef2ff}.muted{font-size:12px;color:#6b7280;margin-top:3px}
 .notice{font-size:12px;color:#6b7280;margin-top:8px;text-align:center}
+.settings{margin-top:12px}.toggle{display:flex;gap:10px;align-items:flex-start;text-align:left;font-size:15px}.toggle input{min-height:0;width:22px;height:22px;margin:1px 0 0;padding:0;flex:none}
+.backup{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
 @media(max-width:480px){.time{font-size:57px}.exercise{font-size:21px}.controls{grid-template-columns:1fr 1fr}.controls button:last-child{grid-column:1/-1}}
 </style>
 </head>
@@ -75,7 +77,15 @@ select,input{background:white;color:#111827}select{flex:1}button{font-weight:750
 </div>
 
 <div id="list" class="list"></div>
-<div class="notice">Your workout log and progress are saved locally in this browser on this device.</div>
+
+<div class="log settings">
+<h2>⚙️ Settings &amp; backup</h2>
+<label class="toggle"><input type="checkbox" id="lockAlert"><span>Rest alert when the phone is locked<div class="muted">Plays the countdown beeps as audio so they sound on the lock screen. On iPhone this pauses your music while resting.</div></span></label>
+<div class="backup"><button id="export" class="secondary">⬇ Export log</button><button id="importBtn" class="secondary">⬆ Import log</button></div>
+<input type="file" id="import" accept="application/json,.json" hidden>
+<div id="backupMsg" class="muted"></div>
+</div>
+<div class="notice">Your log is saved only in this browser on this device. Safari and the Home Screen app keep separate logs, so export a backup now and then.</div>
 </div>
 
 <script>
@@ -103,6 +113,27 @@ let audioCtx=null;
 function audio(){if(!audioCtx){const C=window.AudioContext||window.webkitAudioContext;if(!C)return null;audioCtx=new C()}if(audioCtx.state==="suspended")audioCtx.resume();return audioCtx}
 function beep(freq=700,duration=.12){try{const c=audio();if(!c)return;const o=c.createOscillator(),g=c.createGain();o.frequency.value=freq;g.gain.value=.08;o.connect(g);g.connect(c.destination);o.start();g.gain.exponentialRampToValueAtTime(.001,c.currentTime+duration);o.stop(c.currentTime+duration)}catch(e){}}
 function vibrate(p=[100]){if(navigator.vibrate)navigator.vibrate(p)}
+
+// iOS suspends JS when the phone locks, but keeps an already-playing audio clip going.
+// So for rest we play a clip that is silent until the 3-2-1 beeps at the end.
+const PKEY="gymTrackerPrefsV1",prefs=store.get(PKEY,{lockAlert:false});
+let restAudio=null,restUrl=null;
+function restWav(sec){
+ const rate=8000,n=Math.round((sec+.5)*rate),buf=new ArrayBuffer(44+n),v=new DataView(buf),str=(o,s)=>[...s].forEach((c,k)=>v.setUint8(o+k,c.charCodeAt(0)));
+ str(0,"RIFF");v.setUint32(4,36+n,true);str(8,"WAVEfmt ");v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+ v.setUint32(24,rate,true);v.setUint32(28,rate,true);v.setUint16(32,1,true);v.setUint16(34,8,true);str(36,"data");v.setUint32(40,n,true);
+ new Uint8Array(buf,44).fill(128);
+ const tone=(at,freq,dur)=>{if(at<0)return;const a=Math.round(at*rate);for(let k=0;k<dur*rate&&a+k<n;k++)v.setUint8(44+a+k,128+Math.round(50*Math.sin(2*Math.PI*freq*k/rate)))};
+ tone(sec-3,750,.12);tone(sec-2,750,.12);tone(sec-1,1000,.12);tone(sec,1200,.4);
+ return URL.createObjectURL(new Blob([buf],{type:"audio/wav"}));
+}
+function startRestAudio(){
+ stopRestAudio();if(!prefs.lockAlert||state!=="rest"||paused)return;
+ const sec=(endAt-Date.now())/1000;if(sec<1)return;
+ restUrl=restWav(sec);restAudio=new Audio(restUrl);restAudio.addEventListener("ended",stopRestAudio);restAudio.play().catch(stopRestAudio);
+ if("mediaSession" in navigator&&window.MediaMetadata)navigator.mediaSession.metadata=new MediaMetadata({title:"Rest — "+items[i][0],artist:"Gym Timer"});
+}
+function stopRestAudio(){if(restAudio){restAudio.pause();restAudio.removeAttribute("src");restAudio=null}if(restUrl){URL.revokeObjectURL(restUrl);restUrl=null}}
 
 // Keep the screen on during a workout so the timer stays visible and running
 async function wake(){if(wakeLock||!("wakeLock" in navigator)||document.visibilityState!=="visible")return;try{wakeLock=await navigator.wakeLock.request("screen");wakeLock.addEventListener("release",()=>{wakeLock=null})}catch(e){}}
@@ -139,7 +170,7 @@ function remainingSec(){return Math.ceil((paused?remainingMs:endAt-Date.now())/1
 
 function reset(){
  day=$("day").value;items=W[day];i=0;set=1;state="ready";paused=false;session=0;lastShown=null;
- store.del(SKEY);release();
+ store.del(SKEY);release();stopRestAudio();
  $("phase").textContent="READY";$("time").textContent="00:00";$("exercise").textContent="Ready to train";
  $("info").textContent="Tap Start. You'll get a 3-second countdown before each set.";
  $("countdown").textContent="";$("set").textContent="—";$("exno").textContent="—";$("elapsed").textContent="00:00";
@@ -150,7 +181,7 @@ function prepareSet(){
  unpause();state="countdown";endAt=Date.now()+3000;lastShown=3;
  $("phase").textContent="GET READY";$("time").textContent="00:03";$("exercise").textContent=items[i][0];
  $("info").textContent=`Set ${set} of ${items[i][1]} · Target: ${target()}`;
- $("countdown").textContent="Get into position…";$("action").disabled=true;prefill();render();beep(500);saveSession();
+ $("countdown").textContent="Get into position…";$("action").disabled=true;prefill();render();if(!restAudio)beep(500);saveSession();
 }
 function countdownSecond(s){
  if(s>0){$("time").textContent="00:0"+s;$("countdown").textContent=s===1?"GO NEXT!":"Get ready…";beep(s===1?900:600,.1);vibrate(s===1?[150]:[50])}
@@ -184,17 +215,17 @@ function showRest(){
 function completeSet(){
  if(state!=="work")return;saveCurrentSet();state="rest";
  const rest=items[i][3]||60;endAt=Date.now()+rest*1000;lastShown=rest;
- showRest();render();vibrate([100,80,100]);saveSession();
+ showRest();render();vibrate([100,80,100]);saveSession();startRestAudio();
 }
 function restSecond(s){
- if(s>0){$("time").textContent=fmt(s);if(s<=3){beep(s===1?1000:750,.1);vibrate([60])}}
+ if(s>0){$("time").textContent=fmt(s);if(s<=3){if(!restAudio)beep(s===1?1000:750,.1);vibrate([60])}}
  else nextStep();
 }
 function nextStep(){
  if(set<items[i][1]){set++;prepareSet()}
  else if(i<items.length-1){i++;set=1;prepareSet()}
  else{
-  unpause();state="done";store.del(SKEY);release();$("start").disabled=false;
+  unpause();stopRestAudio();state="done";store.del(SKEY);release();$("start").disabled=false;
   $("phase").textContent="COMPLETE 🎉";$("time").textContent="00:00";$("exercise").textContent="Workout complete";$("info").textContent="Great work. Cool down, hydrate and recover.";$("countdown").textContent="";$("set").textContent="✓";$("action").disabled=true;$("action").textContent="WORKOUT COMPLETE";beep(1200,.25);vibrate([150,80,150,80,300]);render();
  }
 }
@@ -203,6 +234,7 @@ function togglePause(){
  if(paused){pausedMs+=now-pausedAt;paused=false;endAt=now+remainingMs}
  else{paused=true;pausedAt=now;remainingMs=endAt-now}
  $("pause").textContent=paused?"▶ Resume":"Ⅱ Pause";saveSession();
+ paused?stopRestAudio():startRestAudio();
 }
 // Timers are computed from the wall clock, so they stay correct after the phone locks or the tab is backgrounded
 function tick(){
@@ -221,14 +253,53 @@ function restore(s){
  else prepareSet();
  wake();tick();
 }
+const workoutCount=logs=>new Set(Object.values(logs).flat().map(e=>e.session||e.day+e.date)).size;
+const backupMsg=m=>{$("backupMsg").textContent=m};
+async function exportLogs(){
+ const logs=loadLogs(),name=`gym-log-${today()}.json`;
+ const file=new File([JSON.stringify({app:"gym-timer",version:1,exported:new Date().toISOString(),logs},null,1)],name,{type:"application/json"});
+ const done=`Exported ${workoutCount(logs)} workouts.`;
+ if(navigator.canShare&&navigator.canShare({files:[file]})){
+  try{await navigator.share({files:[file],title:"Gym log"});backupMsg(done);return}catch(e){if(e.name==="AbortError")return}
+ }
+ const a=document.createElement("a");a.href=URL.createObjectURL(file);a.download=name;document.body.appendChild(a);a.click();a.remove();
+ setTimeout(()=>URL.revokeObjectURL(a.href),1000);backupMsg(done);
+}
+// Merge, never overwrite: add entries that aren't already here, then keep each list in date order
+function mergeLogs(incoming){
+ const logs=loadLogs();let added=0;
+ for(const[k,list]of Object.entries(incoming)){
+  if(!Array.isArray(list))continue;const cur=logs[k]||(logs[k]=[]);
+  for(const e of list){
+   if(!e||!Array.isArray(e.sets))continue;
+   if(!cur.some(x=>e.session?x.session===e.session:!x.session&&x.date===e.date&&x.day===e.day)){cur.push(e);added++}
+  }
+  cur.sort((a,b)=>String(a.date).localeCompare(String(b.date))||(a.session||0)-(b.session||0));
+ }
+ saveLogs(logs);return added;
+}
+async function importLogs(file){
+ try{
+  const data=JSON.parse(await file.text());
+  if(data?.app!=="gym-timer"||typeof data.logs!=="object"||!data.logs)throw new Error();
+  const added=mergeLogs(data.logs);render();
+  backupMsg(added?`Imported ${added} exercise logs (${workoutCount(data.logs)} workouts in the file).`:"Nothing new to import — everything in that file is already here.");
+ }catch(e){backupMsg("That file isn't a Gym Timer backup.")}
+}
 const confirmEnd=()=>!active()||confirm("End this workout? Your logged sets are kept.");
 
 $("day").addEventListener("change",()=>{if(confirmEnd())reset();else $("day").value=day});
 $("start").addEventListener("click",startWorkout);$("reset").addEventListener("click",()=>{if(confirmEnd())reset()});
 $("action").addEventListener("click",completeSet);$("pause").addEventListener("click",togglePause);
-$("skip").addEventListener("click",()=>{if(state==="rest")nextStep()});
+$("skip").addEventListener("click",()=>{if(state==="rest"){stopRestAudio();nextStep()}});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&active()){wake();tick()}});
 document.addEventListener("click",()=>{if(active()){wake();audio()}});
+$("lockAlert").checked=prefs.lockAlert;
+$("lockAlert").addEventListener("change",()=>{prefs.lockAlert=$("lockAlert").checked;store.set(PKEY,prefs);prefs.lockAlert?startRestAudio():stopRestAudio()});
+$("export").addEventListener("click",exportLogs);$("importBtn").addEventListener("click",()=>$("import").click());
+$("import").addEventListener("change",()=>{const f=$("import").files[0];if(f)importLogs(f);$("import").value=""});
+if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
 const saved=store.get(SKEY,null);
 reset();restore(saved);setInterval(tick,250);
 </script>
