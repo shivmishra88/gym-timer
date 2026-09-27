@@ -13,6 +13,8 @@ A single-page, mobile-friendly workout timer and tracker for a Monday–Saturday
 - Do later / Skip exercise, or tap any exercise in the list to jump to it; the workout ends when every exercise is done or skipped
 - End-of-workout summary (duration, sets, volume, PRs) and 🏆 PR badges (estimated 1RM, time, or reps)
 - Progress section: this week, streak, 5-week calendar, per-exercise chart, and editable past sessions
+- Edit the routine in the app (✏️ Edit routine): exercises, sets, targets, rest, day titles, Sunday; renaming keeps history
+- Progression suggestions: hit the top of a set's rep target last time → the weight is pre-filled with the next increment
 - Per-set rep targets (e.g. set 2 of "15, 12, 10, 8" shows 12)
 - Timers use the wall clock, so they stay correct after the phone locks; the screen is kept awake during a workout
 - An in-progress workout survives a reload or the app being closed (for up to 3 hours)
@@ -40,8 +42,8 @@ On iPhone: open the link in Safari → Share → **Add to Home Screen**.
 
 ## Editing workouts
 
-The routines live in the `W` object near the top of the `<script>` in `index.html`.
-Each exercise is `[name, sets, target reps, rest seconds]`.
+Use **✏️ Edit routine** in the app. The built-in default plan is `DEFAULT_DAYS` in `index.html`
+(each exercise is `[name, sets, target reps, rest seconds]`); your edited plan is stored on the device and included in backups.
 
 ## Tests
 

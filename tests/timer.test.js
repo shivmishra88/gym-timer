@@ -13,7 +13,7 @@ const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)process.exitCode=1};
  await p.clock.runFor(3100);
  ok(await t('phase')==='WORK','countdown -> WORK after 3s');
  ok((await t('info')).includes('Target: 12'),'per-set target set 1 = 12: '+await t('info'));
- ok(await v('weight')==='60'&&await v('reps')==='12','prefilled 60x12 from last session');
+ ok(await v('weight')==='62.5'&&await v('reps')==='12','hit 12 reps last time → suggests 62.5 kg (was 60)');
  await p.fill('#weight','62');await p.click('#action');
  ok(await t('phase')==='REST'&&await t('time')==='02:30','rest 02:30');
  const h=await t('history')+'|'+await t('today');ok(h.includes('Last time (2026-09-21): 60kg × 12')&&h.includes('Set 1 62kg × 12'),'history keeps last session + shows today: '+h);
@@ -28,7 +28,7 @@ const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)process.exitCode=1};
  ok(await t('set')!=='3/4','lock jump did not double-advance');
  await p.clock.runFor(3500);
  ok(await t('phase')==='WORK'&&await t('set')==='2/4','after long gap: set 2 WORK ('+await t('set')+')');
- ok((await t('info')).includes('Target: 10')&&await v('weight')==='65','set 2 target 10, prefill 65');
+ ok((await t('info')).includes('Target: 10')&&await v('weight')==='67.5','set 2 target 10, hit last time → 67.5');
  p.once('dialog',d=>d.dismiss());await p.click('#reset');ok(await t('phase')==='WORK','reset cancelled keeps workout');
  p.once('dialog',d=>d.dismiss());await p.selectOption('#day','tue');ok(await p.inputValue('#day')==='mon'&&await t('phase')==='WORK','day change cancelled reverts select');
  // run the rest of Monday via complete + skip

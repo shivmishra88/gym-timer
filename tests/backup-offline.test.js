@@ -42,7 +42,7 @@ const URL_=(process.env.BASE||'http://127.0.0.1:8765')+'/index.html';
  const logs=await p.evaluate(()=>JSON.parse(localStorage.gymTrackerLogsV1));
  ok(logs['mon::Decline Bench Press'].map(e=>e.date).join()==='2026-09-14,2026-09-28','merged list in date order');
  ok((await t('history')).includes('Last time (2026-09-28)'),'history still shows latest session');
- await p.setInputFiles('#import',tmp('inc.json'));await p.waitForFunction(()=>document.getElementById('backupMsg').textContent.startsWith('Nothing'));
+ await p.setInputFiles('#import',tmp('inc.json'));await p.waitForFunction(()=>document.getElementById('backupMsg').textContent.startsWith('No new'));
  ok(true,'re-import reports nothing new');
  fs.writeFileSync(tmp('bad.json'),'{"hello":1}');await p.setInputFiles('#import',tmp('bad.json'));
  await p.waitForFunction(()=>document.getElementById('backupMsg').textContent.includes("isn't"));ok(true,'invalid file rejected');

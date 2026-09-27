@@ -1,6 +1,6 @@
 # Gym Timer & Tracker — notes for Claude
 
-Mobile-first workout timer + tracker for a Mon–Sat split, used on the owner's iPhone as a Home Screen app.
+Mobile-first workout timer + tracker (default plan is a Mon–Sat split, editable in the app), used on the owner's iPhone as a Home Screen app.
 Live at https://shivmishra88.github.io/gym-timer/ (GitHub Pages, `main` branch root; every push to `main` deploys).
 
 ## Layout
@@ -12,7 +12,7 @@ Live at https://shivmishra88.github.io/gym-timer/ (GitHub Pages, `main` branch r
 
 ## How the script is organised
 
-- `W` — the plan: `W[day] = [[name, sets, target, restSeconds], ...]`. `" + "` in a name = superset; a target like `"45–60 sec"` / `"30–45 min"` = timed exercise.
+- `DEFAULT_DAYS` is the built-in plan; the live plan is `plan = {titles, days}` loaded from storage, with `W = plan.days` (`W[day] = [[name, sets, target, restSeconds], ...]`, days `mon`–`sun`, and a missing day is a rest day). The routine editor (`openEditor`/`saveEditor`) edits a draft and then calls `applyPlan`; renaming an exercise moves its logs and notes (`migrateRenames`). The editor is disabled mid-workout. `" + "` in a name = superset; a target like `"45–60 sec"` / `"30–45 min"` = timed exercise.
 - State machine: `ready → countdown → work → rest → … → done`. One `tick()` every 250 ms computes everything from the wall clock (`endAt`), so timers survive the phone locking. In `work`, `endAt` is when the set *started*; in `countdown`/`rest` it's when the timer ends.
 - `progress[name]` = sets completed this session; `skipped[name]`; `nextIncomplete()` drives Do later / Skip / tap-to-jump and wrap-around.
 - The session is saved to `localStorage` on every transition and restored on load (discarded after 3 h).
@@ -25,18 +25,21 @@ Live at https://shivmishra88.github.io/gym-timer/ (GitHub Pages, `main` branch r
 | `gymTrackerLogsV1` | `{ "day::Exercise": [ {day, date:"YYYY-MM-DD" (local), session:<start ms>, sets:[{set, weight, reps, weight2, reps2, rpe, time}]} ] }` — lists kept in date order; legacy entries may lack `session` |
 | `gymTrackerSessionV1` | in-progress workout state (see `saveSession`) |
 | `gymTrackerNotesV1` | `{ "day::Exercise": "note" }` |
-| `gymTrackerPrefsV1` | `{ lockAlert }` |
+| `gymTrackerPrefsV1` | `{ lockAlert, inc }` (inc = weight increment for suggestions) |
+| `gymTrackerPlanV1` | `{ titles:{day:title}, days:{day:[[name, sets, target, restSeconds]]} }` — validated by `validPlan` |
 
-Export/Import writes and merges `{app:"gym-timer", version:1, logs, notes}`. Don't rename keys or change the shape without a migration, because the owner has real data in them.
+Export/Import writes and merges `{app:"gym-timer", version:1, logs, notes, plan}`; importing a different valid plan asks before replacing the routine. Don't rename keys or change the shape without a migration, because the owner has real data in them.
 
 PRs and the chart score sets by: estimated 1RM (Epley, `modeOf` = `e1rm`) if the exercise has weight × reps, time for timed work, reps for bodyweight. A PR must beat every *earlier* session (the first session is never a PR).
+
+Progression suggestions (`suggest`/`repTop`) are double progression, set by set: if last session's matching set reached the top of that set's rep target, pre-fill weight + increment and the target reps; otherwise keep the weight and show the target. Only for weighted sets with a parseable rep target (`"12, 10, 8, 6"` per set, `"15–20"` → 20, `"12 + 15"` per superset half).
 
 ## Testing
 
 ```bash
 tests/run.sh      # installs playwright-core once, serves the repo on :8765, runs every tests/*.test.js
 ```
-It needs Google Chrome installed (`channel: 'chrome'`). The tests use Playwright's fake clock, so allow ~300 ms of slack when checking displayed times (the ticker runs every 250 ms). 96 checks, all passing as of step 4. Nothing has been verified on a real iPhone yet (see "Needs checking on device").
+It needs Google Chrome installed (`channel: 'chrome'`). The tests use Playwright's fake clock, so allow ~300 ms of slack when checking displayed times (the ticker runs every 250 ms). 123 checks across 5 files, all passing as of step 5. Nothing has been verified on a real iPhone yet (see "Needs checking on device").
 
 ## Pushing
 
@@ -54,11 +57,13 @@ Came from a PM + lifter review of v3 (the version originally built in ChatGPT).
 - [x] **Step 2 — iPhone reliability**: opt-in lock-screen rest alert (audio clip), offline via service worker, JSON export (share sheet) / import (merge), `navigator.storage.persist()`.
 - [x] **Step 3 — logging depth**: every set saved (blank = "not logged"), edit/delete/add sets, superset fields, work stopwatch + timed targets, RPE, per-exercise sticky notes, Do later / Skip exercise / tap-to-jump, HTML-escaping user input.
 - [x] **Step 4 — motivation**: end-of-workout summary (duration, sets, volume, exercises, PRs), 🏆 PR badges + "New PR!" during rest, Progress section (this week, streak, total, 5-week calendar, per-exercise chart with tooltip, last 10 sessions editable).
-- [ ] **Step 5 — program (next)**: in-app routine editor (add/edit/reorder exercises, sets, targets, rest; add Sunday), stored in localStorage and included in export; auto-progression suggestions (e.g. hit the top of the rep range on all sets → suggest +2.5 kg next time).
+- [x] **Step 5 — program**: in-app routine editor (rename/reorder/add/remove exercises, sets, targets, rest, day titles, Sunday or any rest day, reset to default), with validation and history migration on rename; plan in export/import; the day picker defaults to today's weekday; week/streak follow the plan's training days; per-set double-progression suggestions with a configurable increment.
+
+The five-step roadmap from the original review is complete. Next, pick from the pending list below; the owner hasn't prioritised it yet.
 
 ## Pending items (everything not yet done)
 
-**Program / training content** (the owner decides; suggest, don't change silently)
+**Program / training content** (the owner decides and can now change it in the in-app editor; suggest, don't change the default silently)
 - Legs get 1 day a week vs 2 each for push and pull. Consider a second leg day, or turning Thursday into Legs 2 and spreading the abs across other days.
 - Deadlift is 4th on Saturday; move it first.
 - Shrugs are on both Friday and Saturday (back to back); drop one.
@@ -67,6 +72,8 @@ Came from a PM + lifter review of v3 (the version originally built in ChatGPT).
 - Data inconsistencies: Leg Curl is 4 sets but the target is "15, 10"; Bench Dips target is "controlled".
 
 **Features**
+- Progression suggestions for timed work (hold longer) and bodyweight moves (more reps), and a "deload" hint after repeated misses.
+- Move an exercise between days in the editor (currently remove + add, which doesn't carry history over).
 - Swap an exercise for an alternative (e.g. machine taken → dumbbell version).
 - Rest adjust ±30 s during rest.
 - Warm-up sets (excluded from PRs/volume).
