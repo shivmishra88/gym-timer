@@ -11,6 +11,8 @@ A single-page, mobile-friendly workout timer and tracker for a Monday–Saturday
 - Optional RPE per set and a per-exercise note that carries over to next time
 - Work phase shows a stopwatch; timed exercises (e.g. "45–60 sec") beep at the target and record the time
 - Do later / Skip exercise, or tap any exercise in the list to jump to it; the workout ends when every exercise is done or skipped
+- End-of-workout summary (duration, sets, volume, PRs) and 🏆 PR badges (estimated 1RM, time, or reps)
+- Progress section: this week, streak, 5-week calendar, per-exercise chart, and editable past sessions
 - Per-set rep targets (e.g. set 2 of "15, 12, 10, 8" shows 12)
 - Timers use the wall clock, so they stay correct after the phone locks; the screen is kept awake during a workout
 - An in-progress workout survives a reload or the app being closed (for up to 3 hours)
@@ -40,3 +42,11 @@ On iPhone: open the link in Safari → Share → **Add to Home Screen**.
 
 The routines live in the `W` object near the top of the `<script>` in `index.html`.
 Each exercise is `[name, sets, target reps, rest seconds]`.
+
+## Tests
+
+```bash
+tests/run.sh
+```
+
+Runs the Playwright browser tests against a local server (requires Google Chrome).

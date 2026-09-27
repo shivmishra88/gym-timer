@@ -1,0 +1,6 @@
+{
+  "name": "gym-timer-tests",
+  "private": true,
+  "scripts": { "test": "./run.sh" },
+  "devDependencies": { "playwright-core": "^1.63.0" }
+}

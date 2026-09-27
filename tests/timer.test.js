@@ -1,0 +1,47 @@
+const {chromium}=require('playwright-core');
+const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)process.exitCode=1};
+(async()=>{
+ const b=await chromium.launch({channel:'chrome'});const p=await b.newPage();
+ const errs=[];p.on('pageerror',e=>errs.push(e.message));
+ await p.clock.install({time:new Date('2026-09-28T07:00:00')});
+ await p.goto((process.env.BASE||'http://127.0.0.1:8765')+'/index.html');
+ await p.evaluate(()=>{localStorage.clear();localStorage.setItem('gymTrackerLogsV1',JSON.stringify({'mon::Decline Bench Press':[{day:'mon',date:'2026-09-21',sets:[{set:1,weight:'60',reps:'12'},{set:2,weight:'65',reps:'10'},{set:3,weight:'70',reps:'8'},{set:4,weight:'70',reps:'6'}]}]}))});
+ await p.reload();
+ const t=id=>p.textContent('#'+id), v=id=>p.inputValue('#'+id);
+ await p.click('#start');
+ ok(await p.isDisabled('#start'),'Start disabled during workout');
+ await p.clock.runFor(3100);
+ ok(await t('phase')==='WORK','countdown -> WORK after 3s');
+ ok((await t('info')).includes('Target: 12'),'per-set target set 1 = 12: '+await t('info'));
+ ok(await v('weight')==='60'&&await v('reps')==='12','prefilled 60x12 from last session');
+ await p.fill('#weight','62');await p.click('#action');
+ ok(await t('phase')==='REST'&&await t('time')==='02:30','rest 02:30');
+ const h=await t('history')+'|'+await t('today');ok(h.includes('Last time (2026-09-21): 60kg × 12')&&h.includes('Set 1 62kg × 12'),'history keeps last session + shows today: '+h);
+ await p.clock.runFor(10300);ok(await t('time')==='02:20','rest counts down to 02:20: '+await t('time'));
+ await p.click('#pause');await p.clock.runFor(300);const e1=await t('elapsed');await p.clock.runFor(60000);
+ ok(await t('time')==='02:20'&&await t('elapsed')===e1,'pause freezes rest and elapsed ('+e1+') '+await t('time')+' '+await t('elapsed'));
+ await p.click('#pause');await p.clock.runFor(5000);ok(await t('time')==='02:15','resume continues 02:15: '+await t('time'));
+ await p.reload();await p.clock.runFor(300);
+ ok(await t('phase')==='REST'&&['02:15','02:14','02:13','02:12'].includes(await t('time')),'reload restores rest: '+await t('time'));
+ ok((await t('today')).includes('Set 1 62kg × 12'),'reload keeps today log');
+ await p.clock.fastForward(200000);await p.clock.runFor(300);
+ ok(await t('set')!=='3/4','lock jump did not double-advance');
+ await p.clock.runFor(3500);
+ ok(await t('phase')==='WORK'&&await t('set')==='2/4','after long gap: set 2 WORK ('+await t('set')+')');
+ ok((await t('info')).includes('Target: 10')&&await v('weight')==='65','set 2 target 10, prefill 65');
+ p.once('dialog',d=>d.dismiss());await p.click('#reset');ok(await t('phase')==='WORK','reset cancelled keeps workout');
+ p.once('dialog',d=>d.dismiss());await p.selectOption('#day','tue');ok(await p.inputValue('#day')==='mon'&&await t('phase')==='WORK','day change cancelled reverts select');
+ // run the rest of Monday via complete + skip
+ for(let n=0;n<40&&await t('phase')!=='COMPLETE 🎉';n++){await p.clock.runFor(3100);if(await t('phase')==='WORK'){await p.fill('#weight','50');await p.fill('#reps','8');await p.click('#action');await p.click('#skip')}}
+ ok(await t('phase')==='COMPLETE 🎉','workout completes');
+ ok(await p.evaluate(()=>localStorage.getItem('gymTrackerSessionV1'))===null,'session cleared on complete');
+ ok(!(await p.isDisabled('#start')),'Start re-enabled after complete');
+ const logs=await p.evaluate(()=>JSON.parse(localStorage.getItem('gymTrackerLogsV1')));
+ const d=logs['mon::Decline Bench Press'];ok(d.length===2&&d[1].date==='2026-09-28'&&d[1].sets.length===4,'bench logged 4 sets today (local date)');
+ ok(Object.keys(logs).length===6,'all 6 exercises logged');
+ await p.click('#start');await p.clock.runFor(3100);
+ ok((await t('history')).includes('Last time (2026-09-28): 62kg × 12'),'next session shows the one just done as last time');
+ p.once('dialog',d=>d.accept());await p.click('#reset');ok(await t('phase')==='READY','reset confirmed');
+ ok(errs.length===0,'no page errors '+errs.join(';'));
+ await b.close();
+})();
