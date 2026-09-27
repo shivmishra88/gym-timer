@@ -16,7 +16,7 @@ Live at https://shivmishra88.github.io/gym-timer/ (GitHub Pages, `main` branch r
 - State machine: `ready → countdown → work → rest → … → done`. One `tick()` every 250 ms computes everything from the wall clock (`endAt`), so timers survive the phone locking. In `work`, `endAt` is when the set *started*; in `countdown`/`rest` it's when the timer ends.
 - `progress[name]` = sets completed this session; `skipped[name]`; `nextIncomplete()` drives Do later / Skip / tap-to-jump and wrap-around.
 - The session is saved to `localStorage` on every transition and restored on load (discarded after 3 h).
-- The lock-screen rest alert plays a generated WAV (silent, then 3-2-1 beeps) because iOS keeps audio playing while it suspends JS. It's opt-in because it pauses the user's music.
+- The lock-screen alert (`startAlert`/`stopAlert`) plays a generated WAV (`wav(len, tones)`) that is silent until its beeps: the 3-2-1 at the end of rest, and the min/max target during timed work (cardio over 10 min gets only the min target, and long clips use 4 kHz to stay small). iOS keeps audio playing while it suspends JS. One `Audio` element is reused and unlocked on the first tap (`unlockAlert`), because iOS won't start audio from a timer otherwise. It's opt-in because it pauses the user's music.
 
 ## Storage (localStorage, per browser — Safari and the Home Screen app are separate)
 
@@ -25,21 +25,25 @@ Live at https://shivmishra88.github.io/gym-timer/ (GitHub Pages, `main` branch r
 | `gymTrackerLogsV1` | `{ "day::Exercise": [ {day, date:"YYYY-MM-DD" (local), session:<start ms>, sets:[{set, weight, reps, weight2, reps2, rpe, time}]} ] }` — lists kept in date order; legacy entries may lack `session` |
 | `gymTrackerSessionV1` | in-progress workout state (see `saveSession`) |
 | `gymTrackerNotesV1` | `{ "day::Exercise": "note" }` |
-| `gymTrackerPrefsV1` | `{ lockAlert, inc }` (inc = weight increment for suggestions) |
+| `gymTrackerPrefsV1` | `{ lockAlert, inc, lastExport }` (inc = weight increment for suggestions; lastExport = ms of last backup) |
+| `gymTrackerSummaryV1` | `{ date, html }`, the last workout summary, re-shown on reload the same day until dismissed |
 | `gymTrackerPlanV1` | `{ titles:{day:title}, days:{day:[[name, sets, target, restSeconds]]} }` — validated by `validPlan` |
 
 Export/Import writes and merges `{app:"gym-timer", version:1, logs, notes, plan}`; importing a different valid plan asks before replacing the routine. Don't rename keys or change the shape without a migration, because the owner has real data in them.
 
 PRs and the chart score sets by: estimated 1RM (Epley, `modeOf` = `e1rm`) if the exercise has weight × reps, time for timed work, reps for bodyweight. A PR must beat every *earlier* session (the first session is never a PR).
 
-Progression suggestions (`suggest`/`repTop`) are double progression, set by set: if last session's matching set reached the top of that set's rep target, pre-fill weight + increment and the target reps; otherwise keep the weight and show the target. Only for weighted sets with a parseable rep target (`"12, 10, 8, 6"` per set, `"15–20"` → 20, `"12 + 15"` per superset half).
+Progression suggestions (`suggest`/`repTop`) work per set from the same set last session:
+- **Weighted:** double progression. If you reached the top of that set's rep target, pre-fill weight + increment and the target reps; otherwise keep the weight and show the target. After 3 sessions stuck at the same weight below target (`stalled`), suggest a 10% deload rounded to the increment. Rep targets are parsed from `"12, 10, 8, 6"` (per set), `"15–20"` (→ 20) and `"12 + 15"` (each superset half).
+- **Bodyweight (reps only):** go for one more rep.
+- **Timed:** at or above the max target, go ~10% longer; otherwise aim for the min/max target.
 
 ## Testing
 
 ```bash
 tests/run.sh      # installs playwright-core once, serves the repo on :8765, runs every tests/*.test.js
 ```
-It needs Google Chrome installed (`channel: 'chrome'`). The tests use Playwright's fake clock, so allow ~300 ms of slack when checking displayed times (the ticker runs every 250 ms). 123 checks across 5 files, all passing as of step 5. Nothing has been verified on a real iPhone yet (see "Needs checking on device").
+It needs Google Chrome installed (`channel: 'chrome'`). The tests use Playwright's fake clock, so allow ~300 ms of slack when checking displayed times (the ticker runs every 250 ms). 151 checks across 6 files, all passing. Nothing has been verified on a real iPhone yet (see "Needs checking on device").
 
 ## Pushing
 
@@ -59,7 +63,11 @@ Came from a PM + lifter review of v3 (the version originally built in ChatGPT).
 - [x] **Step 4 — motivation**: end-of-workout summary (duration, sets, volume, exercises, PRs), 🏆 PR badges + "New PR!" during rest, Progress section (this week, streak, total, 5-week calendar, per-exercise chart with tooltip, last 10 sessions editable).
 - [x] **Step 5 — program**: in-app routine editor (rename/reorder/add/remove exercises, sets, targets, rest, day titles, Sunday or any rest day, reset to default), with validation and history migration on rename; plan in export/import; the day picker defaults to today's weekday; week/streak follow the plan's training days; per-set double-progression suggestions with a configurable increment.
 
-The five-step roadmap from the original review is complete. Next, pick from the pending list below; the owner hasn't prioritised it yet.
+The five-step roadmap from the original review is complete. The owner then asked for the pending features, done in batches (cloud sync and lb units deliberately left out: sync needs a backend decision, and all data is in kg):
+- [x] **Batch A — quick wins**: rest ±30 s, lock-screen alert for timed work, backup reminder (summary + "Last backup" in Settings), summary persists after reload (dismissable), countdown copy "Ready… / Set… / Go!", log panel collapses when done, timed/bodyweight suggestions, deload hint.
+- [ ] **Batch B — logging**: warm-up sets (excluded from PRs/volume), bodyweight/assisted weights (BW, BW+x, BW−x), per-hand dumbbell weights (×2 volume).
+- [ ] **Batch C — program**: swap exercise for an alternative, move exercises between days in the editor, muscle tags + weekly sets per muscle.
+- [ ] **Batch D — dark mode.**
 
 ## Pending items (everything not yet done)
 
@@ -72,20 +80,14 @@ The five-step roadmap from the original review is complete. Next, pick from the 
 - Data inconsistencies: Leg Curl is 4 sets but the target is "15, 10"; Bench Dips target is "controlled".
 
 **Features**
-- Progression suggestions for timed work (hold longer) and bodyweight moves (more reps), and a "deload" hint after repeated misses.
 - Move an exercise between days in the editor (currently remove + add, which doesn't carry history over).
 - Swap an exercise for an alternative (e.g. machine taken → dumbbell version).
-- Rest adjust ±30 s during rest.
 - Warm-up sets (excluded from PRs/volume).
-- Bodyweight / assisted weights (negative or "BW+10"), per-hand vs total dumbbell weight, lb units.
+- Bodyweight / assisted weights (negative or "BW+10"), per-hand vs total dumbbell weight (batch B).
 - Weekly volume per muscle group (needs a muscle tag per exercise).
-- Lock-screen alert for timed *work* (e.g. 30-min cardio); it currently covers rest only.
-- A backup reminder (e.g. prompt to export if the last export was over 2 weeks ago).
-- Optional cloud sync (would need a backend or a GitHub-gist/Drive approach).
+- Optional cloud sync (would need a backend or a GitHub-gist/Drive approach) — not started; owner to decide.
+- lb units — not started; all stored weights are kg, so this needs a unit per set or a display-only conversion.
 - Dark mode.
-- The summary disappears on reload once the workout is done; maybe persist the last summary.
-- Copy nit: countdown shows "GO NEXT!" at 1 s.
-- After finishing, the log panel still shows the last exercise's empty fields; could collapse it.
 
 **Needs checking on device** (only tested in desktop Chrome)
 - Lock-screen rest alert, in both Safari and the Home Screen app (older iOS may stop background audio in Home Screen apps).

@@ -57,6 +57,9 @@ select,input{background:white;color:#111827}select{flex:1}button{font-weight:750
 .edrow{border:1px solid #e5e7eb;border-radius:14px;padding:10px;margin-top:8px}.edname{width:100%;font-weight:700}
 .edgrid{display:grid;grid-template-columns:70px 1fr 84px;gap:6px;margin-top:6px}.edgrid label{font-size:12px;color:#6b7280}.edgrid input{width:100%;margin-top:3px}
 .edbtns{display:flex;gap:6px;margin-top:8px}.edbtns [data-rm]{margin-left:auto}
+.restadj{display:flex;gap:8px;justify-content:center;margin:0 0 12px}.restadj .mini{min-width:72px}
+.summary{position:relative}.sumclose{position:absolute;top:12px;right:12px;min-height:32px;padding:4px 10px}
+.remind{margin-top:10px;padding:10px;background:#eff6ff;border-radius:12px;font-size:14px;display:flex;align-items:center;justify-content:space-between;gap:8px}
 .edmsg{color:#b91c1c;font-size:14px;margin-top:8px;min-height:1em}.edreset{margin-top:10px}
 @media(max-width:480px){.time{font-size:57px}.exercise{font-size:21px}.controls{grid-template-columns:1fr 1fr}.controls button:last-child{grid-column:1/-1}}
 </style>
@@ -76,6 +79,7 @@ select,input{background:white;color:#111827}select{flex:1}button{font-weight:750
 <div id="exercise" class="exercise">Ready to train</div>
 <div id="info" class="info">Tap Start. You'll get a 3-second countdown before each set.</div>
 <div id="countdown" class="countdown"></div>
+<div id="restAdj" class="restadj" hidden><button id="restMinus" class="mini secondary">−30s</button><button id="restPlus" class="mini secondary">+30s</button></div>
 <button id="action" class="primary" disabled>START SET</button>
 </div>
 <div id="summary" class="log summary" hidden></div>
@@ -86,7 +90,7 @@ select,input{background:white;color:#111827}select{flex:1}button{font-weight:750
 <div class="stat"><small>ELAPSED</small><b id="elapsed">00:00</b></div>
 </div>
 
-<div class="log">
+<div class="log" id="logPanel">
 <h2>📈 Log this set</h2>
 <div id="nameA" class="partname" hidden></div>
 <div class="fields">
@@ -135,12 +139,13 @@ select,input{background:white;color:#111827}select{flex:1}button{font-weight:750
 
 <div class="log settings">
 <h2>⚙️ Settings &amp; backup</h2>
-<label class="toggle"><input type="checkbox" id="lockAlert"><span>Rest alert when the phone is locked<div class="muted">Plays the countdown beeps as audio so they sound on the lock screen. On iPhone this pauses your music while resting.</div></span></label>
+<label class="toggle"><input type="checkbox" id="lockAlert"><span>Alerts when the phone is locked<div class="muted">Plays the rest countdown (and target beeps for timed exercises like plank or cardio) as audio so they sound on the lock screen. On iPhone this pauses your music while it plays.</div></span></label>
 <label class="incrow" for="inc">Weight increment for suggestions<select id="inc"><option>1</option><option>1.25</option><option>2</option><option>2.5</option><option>5</option></select></label>
 <button id="editPlan" class="secondary wide">✏️ Edit routine</button>
 <div class="backup"><button id="export" class="secondary">⬇ Export log</button><button id="importBtn" class="secondary">⬆ Import log</button></div>
 <input type="file" id="import" accept="application/json,.json" hidden>
 <div id="backupMsg" class="muted"></div>
+<div id="lastBackup" class="muted"></div>
 </div>
 <div id="planEditor" class="log editorpanel" hidden>
 <h2>✏️ Edit routine</h2>
@@ -205,25 +210,36 @@ function beep(freq=700,duration=.12){try{const c=audio();if(!c)return;const o=c.
 function vibrate(p=[100]){if(navigator.vibrate)navigator.vibrate(p)}
 
 // iOS suspends JS when the phone locks, but keeps an already-playing audio clip going.
-// So for rest we play a clip that is silent until the 3-2-1 beeps at the end.
+// So rest (and timed work) plays a generated clip that is silent until its beeps. iOS only lets a page start audio
+// it was allowed to play from a tap, so one element is reused and unlocked on the first tap.
 const PKEY="gymTrackerPrefsV1",prefs=store.get(PKEY,{lockAlert:false});
-let restAudio=null,restUrl=null;
-function restWav(sec){
- const rate=8000,n=Math.round((sec+.5)*rate),buf=new ArrayBuffer(44+n),v=new DataView(buf),str=(o,s)=>[...s].forEach((c,k)=>v.setUint8(o+k,c.charCodeAt(0)));
+let alertEl=null,alertUrl=null,alertUnlocked=false;
+function wav(len,tones){
+ const rate=len>300?4000:8000,n=Math.round(len*rate),buf=new ArrayBuffer(44+n),v=new DataView(buf),str=(o,s)=>[...s].forEach((c,k)=>v.setUint8(o+k,c.charCodeAt(0)));
  str(0,"RIFF");v.setUint32(4,36+n,true);str(8,"WAVEfmt ");v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
  v.setUint32(24,rate,true);v.setUint32(28,rate,true);v.setUint16(32,1,true);v.setUint16(34,8,true);str(36,"data");v.setUint32(40,n,true);
  new Uint8Array(buf,44).fill(128);
- const tone=(at,freq,dur)=>{if(at<0)return;const a=Math.round(at*rate);for(let k=0;k<dur*rate&&a+k<n;k++)v.setUint8(44+a+k,128+Math.round(50*Math.sin(2*Math.PI*freq*k/rate)))};
- tone(sec-3,750,.12);tone(sec-2,750,.12);tone(sec-1,1000,.12);tone(sec,1200,.4);
+ for(const[at,freq,dur]of tones){if(at<0)continue;const a=Math.round(at*rate);for(let k=0;k<dur*rate&&a+k<n;k++)v.setUint8(44+a+k,128+Math.round(50*Math.sin(2*Math.PI*freq*k/rate)))}
  return URL.createObjectURL(new Blob([buf],{type:"audio/wav"}));
 }
-function startRestAudio(){
- stopRestAudio();if(!prefs.lockAlert||state!=="rest"||paused)return;
- const sec=(endAt-Date.now())/1000;if(sec<1)return;
- restUrl=restWav(sec);restAudio=new Audio(restUrl);restAudio.addEventListener("ended",stopRestAudio);restAudio.play().catch(stopRestAudio);
- if("mediaSession" in navigator&&window.MediaMetadata)navigator.mediaSession.metadata=new MediaMetadata({title:"Rest — "+items[i][0],artist:"Gym Timer"});
+function player(){if(!alertEl){alertEl=new Audio();alertEl.addEventListener("ended",stopAlert)}return alertEl}
+function unlockAlert(){
+ if(alertUnlocked||alertUrl||!prefs.lockAlert)return;
+ const a=player(),u=wav(.05,[]);a.src=u;a.play().then(()=>{alertUnlocked=true}).catch(()=>{}).finally(()=>URL.revokeObjectURL(u));
 }
-function stopRestAudio(){if(restAudio){restAudio.pause();restAudio.removeAttribute("src");restAudio=null}if(restUrl){URL.revokeObjectURL(restUrl);restUrl=null}}
+function startAlert(){
+ stopAlert();if(!prefs.lockAlert||paused)return;
+ let url,title;
+ if(state==="rest"){const sec=(endAt-Date.now())/1000;if(sec<1)return;url=wav(sec+.5,[[sec-3,750,.12],[sec-2,750,.12],[sec-1,1000,.12],[sec,1200,.4]]);title="Rest — "}
+ else if(state==="work"&&timedTarget()){
+  // beep at the minimum and maximum target; very long targets (cardio) only get the minimum to keep the clip small
+  const tt=timedTarget(),el=workSec(),end=tt[1]<=600?tt[1]:tt[0],sec=end-el;if(sec<1)return;
+  url=wav(sec+.5,[[tt[0]-el,1000,.3],[tt[1]-el,1200,.4]]);title="Work — ";
+ }else return;
+ alertUrl=url;const a=player();a.src=url;a.play().catch(stopAlert);
+ if("mediaSession" in navigator&&window.MediaMetadata)navigator.mediaSession.metadata=new MediaMetadata({title:title+items[i][0],artist:"Gym Timer"});
+}
+function stopAlert(){if(alertUrl){alertEl.pause();alertEl.removeAttribute("src");URL.revokeObjectURL(alertUrl);alertUrl=null}}
 
 // Keep the screen on during a workout so the timer stays visible and running
 async function wake(){if(wakeLock||!("wakeLock" in navigator)||document.visibilityState!=="visible")return;try{wakeLock=await navigator.wakeLock.request("screen");wakeLock.addEventListener("release",()=>{wakeLock=null})}catch(e){}}
@@ -324,13 +340,32 @@ function repTop(setNo,part=0){
  const list=halves[halves.length>1?part:0].split(",").map(s=>s.trim()),s=list.length===x[1]?list[setNo-1]:list.length===1?list[0]:null;
  const m=s&&s.match(/^(\d+)(?:\s*[–-]\s*(\d+))?/);return m?Math.max(+m[1],+(m[2]||m[1])):null;
 }
-// Double progression, per set: hit the top of the target last time → add the increment; otherwise aim for the target at the same weight
+const roundInc=v=>{const inc=prefs.inc||2.5;return+(Math.round(v/inc)*inc).toFixed(2)};
+// Missed the target at the same weight on this set for the last 3 sessions
+function stalled(wf,rf,w,tgt){
+ const l=entries().filter(e=>e.session!==session).slice(-3);
+ return l.length===3&&l.every(e=>{const x=e.sets.find(s=>s.set===set);return x&&num(x[wf])===w&&num(x[rf])!=null&&num(x[rf])<tgt});
+}
+// Suggestion for this set from the same set last session (and pre-fills the suggested weight):
+// weighted → double progression (hit the top of the target → add the increment, else aim for the target; 3 misses → deload 10%);
+// bodyweight → more reps; timed → hold longer
 function suggest(ps,part){
+ const tt=timedTarget();
+ if(tt){
+  const t=ps.time;if(part||!t)return"";
+  if(t>=tt[1])return`⏱ You went ${fmt(t)} last time — go for ${fmt(t+Math.max(5,Math.round(t*.1/5)*5))}`;
+  return t>=tt[0]?`⏱ ${fmt(t)} last time — push toward ${fmt(tt[1])}`:`⏱ Aim for ${fmt(tt[0])} (last time ${fmt(t)})`;
+ }
  const wf=part?"weight2":"weight",rf=part?"reps2":"reps",tgt=repTop(set,part),w=num(ps[wf]),r=num(ps[rf]);
- if(tgt==null||!w||r==null)return"";
- const who=parts().length>1?parts()[part]+": ":"";
- if(r>=tgt){const nw=+(w+(prefs.inc||2.5)).toFixed(2);$(wf).value=String(nw);$(rf).value=String(tgt);return`📈 ${who||"Y"}${who?"y":""}ou hit ${r} reps at ${w} kg last time — try ${nw} kg`}
- return`🎯 ${who||"A"}${who?"a":""}im for ${tgt} reps at ${w} kg (last time ${r})`;
+ if(tgt==null||r==null)return"";
+ const who=parts().length>1?parts()[part]+": ":"",say=s=>who?who+s:s[0].toUpperCase()+s.slice(1);
+ if(!w){
+  if(has(ps[wf]))return"";
+  return r>=tgt?`💪 ${say(`you hit ${r} reps last time — go for ${r+1}+ or add weight`)}`:`🎯 ${say(`aim for ${tgt} reps (last time ${r})`)}`;
+ }
+ if(r>=tgt){const nw=+(w+(prefs.inc||2.5)).toFixed(2);$(wf).value=String(nw);$(rf).value=String(tgt);return`📈 ${say(`you hit ${r} reps at ${w} kg last time — try ${nw} kg`)}`}
+ if(stalled(wf,rf,w,tgt)){const nw=roundInc(w*.9);$(wf).value=String(nw);return`🔁 ${say(`stuck at ${w} kg for 3 sessions — deload to ${nw} kg and build back up`)}`}
+ return`🎯 ${say(`aim for ${tgt} reps at ${w} kg (last time ${r})`)}`;
 }
 // Pre-fill from the same set last session, else the last set logged today
 function prefill(){
@@ -425,7 +460,7 @@ function nextIncomplete(from){for(let k=1;k<=items.length;k++){const j=(from+k)%
 
 function reset(){
  day=$("day").value;items=W[day];i=0;set=1;state="ready";paused=false;session=0;lastShown=null;progress={};skipped={};editing=null;
- store.del(SKEY);release();stopRestAudio();$("summary").hidden=true;
+ store.del(SKEY);release();stopAlert();$("summary").hidden=true;$("logPanel").hidden=false;$("restAdj").hidden=true;
  $("phase").textContent="READY";$("time").textContent="00:00";$("exercise").textContent="Ready to train";
  $("info").textContent="Tap Start. You'll get a 3-second countdown before each set.";
  $("countdown").textContent="";$("set").textContent="—";$("exno").textContent="—";$("elapsed").textContent="00:00";
@@ -433,26 +468,26 @@ function reset(){
  $("start").disabled=false;configureFields();prefill();$("weight").value=$("reps").value=$("weight2").value=$("reps2").value="";render();
 }
 function prepareSet(){
- unpause();state="countdown";endAt=Date.now()+3000;lastShown=3;editing=null;
+ unpause();state="countdown";endAt=Date.now()+3000;lastShown=3;editing=null;$("restAdj").hidden=true;
  $("phase").textContent="GET READY";$("time").textContent="00:03";$("exercise").textContent=items[i][0];
  $("info").textContent=`Set ${set} of ${items[i][1]} · Target: ${target()}`;
- $("countdown").textContent="Get into position…";$("action").disabled=true;configureFields();prefill();stats();render();if(!restAudio)beep(500);saveSession();
+ $("countdown").textContent="Get into position…";$("action").disabled=true;configureFields();prefill();stats();render();if(!alertUrl)beep(500);saveSession();
 }
 function countdownSecond(s){
- if(s>0){$("time").textContent="00:0"+s;$("countdown").textContent=s===1?"GO NEXT!":"Get ready…";beep(s===1?900:600,.1);vibrate(s===1?[150]:[50])}
+ if(s>0){$("time").textContent="00:0"+s;$("countdown").textContent=s===1?"Set…":"Ready…";beep(s===1?900:600,.1);vibrate(s===1?[150]:[50])}
  else startSet();
 }
 function startWorkout(){
  if(active())return;
  i=0;set=1;session=startAt=Date.now();pausedMs=0;paused=false;progress={};skipped={};
- $("start").disabled=true;$("summary").hidden=true;wake();prepareSet();
+ $("start").disabled=true;$("summary").hidden=true;store.del(SUMKEY);wake();prepareSet();
 }
 // keep=true when restoring a set already in progress after a reload
 function startSet(keep){
  if(!keep){unpause();endAt=Date.now()}
- state="work";lastShown=null;$("phase").textContent="WORK";$("time").textContent=fmt(workSec());$("countdown").textContent="";
+ state="work";lastShown=null;$("phase").textContent="WORK";$("time").textContent=fmt(workSec());$("countdown").textContent=keep?"":"Go!";
  $("exercise").textContent=items[i][0];$("info").textContent=`Set ${set} of ${items[i][1]} · Target: ${target()}`;stats();
- $("action").disabled=false;$("action").textContent="✓ SET COMPLETE — START REST";render();if(!keep){beep(1000,.2);vibrate([200])}saveSession();
+ $("action").disabled=false;$("action").textContent="✓ SET COMPLETE — START REST";render();if(!keep){beep(1000,.2);vibrate([200])}saveSession();startAlert();
 }
 // Every completed set is saved, even with blank fields, so it can be filled in later with Edit
 function saveCurrentSet(secs){
@@ -470,17 +505,22 @@ function showRest(){
  const d=progress[items[i][0]]||0,n=nextIncomplete(i);
  $("phase").textContent="REST";$("time").textContent=fmt(remainingSec());$("exercise").textContent=items[i][0];$("countdown").textContent="";
  $("info").textContent=d<items[i][1]?`Rest now. Next is Set ${d+1}.`:n<0?"Rest now. Then you're done.":`Rest now. Next: ${items[n][0]}`;
- $("action").disabled=true;$("action").textContent="RESTING…";
+ $("action").disabled=true;$("action").textContent="RESTING…";$("restAdj").hidden=false;
+}
+function adjustRest(d){
+ if(state!=="rest")return;
+ if(paused)remainingMs=Math.max(1000,remainingMs+d*1000);else endAt=Math.max(Date.now()+1000,endAt+d*1000);
+ lastShown=null;$("time").textContent=fmt(remainingSec());saveSession();if(!paused)startAlert();
 }
 function completeSet(){
- if(state!=="work")return;const secs=workSec();unpause();const pr=isNewPR(saveCurrentSet(secs));
+ if(state!=="work")return;const secs=workSec();unpause();stopAlert();const pr=isNewPR(saveCurrentSet(secs));
  progress[items[i][0]]=Math.max(progress[items[i][0]]||0,set);state="rest";
  const rest=items[i][3]||60;endAt=Date.now()+rest*1000;lastShown=rest;
- showRest();render();vibrate([100,80,100]);saveSession();startRestAudio();
+ showRest();render();vibrate([100,80,100]);saveSession();startAlert();
  if(pr){$("countdown").textContent="🏆 New PR!";beep(1320,.3)}
 }
 function restSecond(s){
- if(s>0){$("time").textContent=fmt(s);if(s<=3){if(!restAudio)beep(s===1?1000:750,.1);vibrate([60])}}
+ if(s>0){$("time").textContent=fmt(s);if(s<=3){if(!alertUrl)beep(s===1?1000:750,.1);vibrate([60])}}
  else nextStep();
 }
 function showSummary(dur){
@@ -493,19 +533,22 @@ function showSummary(dur){
   if(pr.size){const best=bestOf({sets:e.sets.filter(s=>pr.has(s.set))},modeOf(list,timed));prs.push(`${x[0]}: ${fmtSet(best,timed)}`)}
  }
  const doneN=items.filter(x=>(progress[x[0]]||0)>=x[1]&&!skipped[x[0]]).length,skipN=Object.keys(skipped).length;
- $("summary").innerHTML=`<h2>🎉 Workout summary</h2><div class="sumgrid">
+ const stale=workoutCount(logs)>=3&&(!prefs.lastExport||Date.now()-prefs.lastExport>14*864e5);
+ $("summary").innerHTML=`<button class="mini secondary sumclose" data-close aria-label="Dismiss summary">✕</button><h2>🎉 Workout summary</h2><div class="sumgrid">
  <div><small>Duration</small><b>${fmt(dur)}</b></div><div><small>Sets</small><b>${sets}</b></div>
  <div><small>Volume</small><b>${Math.round(vol).toLocaleString()} kg</b></div><div><small>Exercises</small><b>${doneN}/${items.length}</b></div></div>
  ${skipN?`<div class="muted">${skipN} skipped</div>`:""}
- ${prs.length?`<div class="prs"><b>🏆 PRs today</b>${prs.map(p=>`<div>${esc(p)}</div>`).join("")}</div>`:'<div class="muted">No PRs this time — keep pushing.</div>'}`;
+ ${prs.length?`<div class="prs"><b>🏆 PRs today</b>${prs.map(p=>`<div>${esc(p)}</div>`).join("")}</div>`:'<div class="muted">No PRs this time — keep pushing.</div>'}
+ ${stale?`<div class="remind">💾 ${prefs.lastExport?"It's been over 2 weeks since your last backup.":"You haven't backed up your log yet."} <button class="mini" data-export>Export now</button></div>`:""}`;
+ store.set(SUMKEY,{date:today(),html:$("summary").innerHTML});
  $("summary").hidden=false;$("summary").scrollIntoView({behavior:"smooth",block:"center"});
 }
-function jump(n){stopRestAudio();i=n;set=(progress[items[n][0]]||0)+1;prepareSet()}
+function jump(n){stopAlert();i=n;set=(progress[items[n][0]]||0)+1;prepareSet()}
 function nextStep(){
  if(!done(i)){set=(progress[items[i][0]]||0)+1;prepareSet();return}
  const n=nextIncomplete(i);
  if(n>=0){jump(n);return}
- unpause();stopRestAudio();const dur=(Date.now()-startAt-pausedMs)/1000;state="done";store.del(SKEY);showSummary(dur);release();$("start").disabled=false;
+ unpause();stopAlert();const dur=(Date.now()-startAt-pausedMs)/1000;state="done";store.del(SKEY);showSummary(dur);release();$("start").disabled=false;$("logPanel").hidden=true;$("restAdj").hidden=true;
  $("phase").textContent="COMPLETE 🎉";$("time").textContent="00:00";$("exercise").textContent="Workout complete";$("info").textContent="Great work. Cool down, hydrate and recover.";$("countdown").textContent="";$("set").textContent="✓";$("action").disabled=true;$("action").textContent="WORKOUT COMPLETE";beep(1200,.25);vibrate([150,80,150,80,300]);render();
 }
 function doLater(){
@@ -515,14 +558,14 @@ function doLater(){
 }
 function skipExercise(){
  if(!active()||!confirm(`Skip ${items[i][0]} for today?`))return;
- stopRestAudio();skipped[items[i][0]]=true;progress[items[i][0]]=items[i][1];nextStep();
+ stopAlert();skipped[items[i][0]]=true;progress[items[i][0]]=items[i][1];nextStep();
 }
 function togglePause(){
  if(!active())return;const now=Date.now(),work=state==="work";
  if(paused){pausedMs+=now-pausedAt;paused=false;endAt=work?now-remainingMs:now+remainingMs}
  else{paused=true;pausedAt=now;remainingMs=work?now-endAt:endAt-now}
  $("pause").textContent=paused?"▶ Resume":"Ⅱ Pause";saveSession();
- paused?stopRestAudio():startRestAudio();
+ paused?stopAlert():startAlert();
 }
 // Timers are computed from the wall clock, so they stay correct after the phone locks or the tab is backgrounded
 function tick(){
@@ -532,7 +575,7 @@ function tick(){
  if(state==="work"){
   const s=workSec();if(s===lastShown)return;lastShown=s;$("time").textContent=fmt(s);
   const tt=timedTarget();
-  if(tt&&s>0&&(s===tt[0]||s===tt[1])){beep(1000,.3);vibrate([200,100,200]);$("countdown").textContent=s===tt[1]?"Max time — finish up":"Target time reached"}
+  if(tt&&s>0&&(s===tt[0]||s===tt[1])){if(!alertUrl)beep(1000,.3);vibrate([200,100,200]);$("countdown").textContent=s===tt[1]?"Max time — finish up":"Target time reached"}
   return;
  }
  const s=remainingSec();if(s===lastShown)return;lastShown=s;
@@ -553,15 +596,16 @@ function restore(s){
 }
 const workoutCount=logs=>new Set(Object.values(logs).flat().map(e=>e.session||e.day+e.date)).size;
 const backupMsg=m=>{$("backupMsg").textContent=m};
+function exported(msg){prefs.lastExport=Date.now();store.set(PKEY,prefs);backupMsg(msg);showLastBackup();$("summary").querySelector(".remind")?.remove()}
 async function exportLogs(){
  const logs=loadLogs(),name=`gym-log-${today()}.json`;
  const file=new File([JSON.stringify({app:"gym-timer",version:1,exported:new Date().toISOString(),logs,notes:loadNotes(),plan},null,1)],name,{type:"application/json"});
  const msg=`Exported ${workoutCount(logs)} workouts.`;
  if(navigator.canShare&&navigator.canShare({files:[file]})){
-  try{await navigator.share({files:[file],title:"Gym log"});backupMsg(msg);return}catch(e){if(e.name==="AbortError")return}
+  try{await navigator.share({files:[file],title:"Gym log"});exported(msg);return}catch(e){if(e.name==="AbortError")return}
  }
  const a=document.createElement("a");a.href=URL.createObjectURL(file);a.download=name;document.body.appendChild(a);a.click();a.remove();
- setTimeout(()=>URL.revokeObjectURL(a.href),1000);backupMsg(msg);
+ setTimeout(()=>URL.revokeObjectURL(a.href),1000);exported(msg);
 }
 // Merge, never overwrite: add entries that aren't already here, then keep each list in date order
 function mergeLogs(incoming){
@@ -649,12 +693,14 @@ function saveEditor(){
  const titles={};for(const d of DAY_IDS)if(draft.titles[d])titles[d]=draft.titles[d];
  const pick=$("day").value;closeEditor();applyPlan({titles,days},pick);backupMsg("Routine saved.");
 }
+const SUMKEY="gymTrackerSummaryV1";
+function showLastBackup(){const t=prefs.lastExport,d=t?Math.floor((Date.now()-t)/864e5):null;$("lastBackup").textContent=t?`Last backup: ${d?d+" day"+(d===1?"":"s")+" ago":"today"}`:"Last backup: never"}
 const confirmEnd=()=>!active()||confirm("End this workout? Your logged sets are kept.");
 
 $("day").addEventListener("change",()=>{if(confirmEnd())reset();else $("day").value=day});
-$("start").addEventListener("click",startWorkout);$("reset").addEventListener("click",()=>{if(confirmEnd())reset()});
+$("start").addEventListener("click",startWorkout);$("reset").addEventListener("click",()=>{if(confirmEnd()){reset();store.del(SUMKEY)}});
 $("action").addEventListener("click",completeSet);$("pause").addEventListener("click",togglePause);
-$("skip").addEventListener("click",()=>{if(state==="rest"){stopRestAudio();nextStep()}});
+$("skip").addEventListener("click",()=>{if(state==="rest"){stopAlert();nextStep()}});
 $("later").addEventListener("click",doLater);$("skipEx").addEventListener("click",skipExercise);
 $("list").addEventListener("click",e=>{
  const r=e.target.closest(".row");if(!r||!active())return;const n=+r.dataset.n;
@@ -679,9 +725,9 @@ $("pEx").addEventListener("change",()=>{pKey=$("pEx").value;editing=null;renderP
 $("chart").addEventListener("pointermove",chartTip);$("chart").addEventListener("click",chartTip);$("chart").addEventListener("pointerleave",()=>{const t=$("chart").querySelector(".tip");if(t)t.hidden=true});
 $("note").addEventListener("input",()=>{const n=loadNotes(),k=exerciseKey(),v=$("note").value.trim();if(v)n[k]=v;else delete n[k];store.set(NKEY,n)});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&active()){wake();tick()}});
-document.addEventListener("click",()=>{if(active()){wake();audio()}});
+document.addEventListener("click",()=>{unlockAlert();if(active()){wake();audio()}});
 $("lockAlert").checked=prefs.lockAlert;
-$("lockAlert").addEventListener("change",()=>{prefs.lockAlert=$("lockAlert").checked;store.set(PKEY,prefs);prefs.lockAlert?startRestAudio():stopRestAudio()});
+$("lockAlert").addEventListener("change",()=>{prefs.lockAlert=$("lockAlert").checked;store.set(PKEY,prefs);prefs.lockAlert?startAlert():stopAlert()});
 $("editPlan").addEventListener("click",openEditor);$("edCancel").addEventListener("click",closeEditor);$("edSave").addEventListener("click",saveEditor);
 $("edDay").addEventListener("change",()=>{readEditor();draftDay=$("edDay").value;$("edMsg").textContent="";renderEditor()});
 $("edAdd").addEventListener("click",()=>{readEditor();draft.days[draftDay].push({name:"",sets:3,target:"10",rest:60,orig:null});renderEditor();const n=$("edRows").querySelectorAll(".edname");n[n.length-1].focus()});
@@ -696,11 +742,16 @@ $("edRows").addEventListener("click",e=>{
 });
 $("inc").value=String(prefs.inc||2.5);
 $("inc").addEventListener("change",()=>{prefs.inc=+$("inc").value;store.set(PKEY,prefs);if(active())prefill()});
-$("export").addEventListener("click",exportLogs);$("importBtn").addEventListener("click",()=>$("import").click());
+$("export").addEventListener("click",exportLogs);
+$("restMinus").addEventListener("click",()=>adjustRest(-30));$("restPlus").addEventListener("click",()=>adjustRest(30));
+$("summary").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;if("export" in b.dataset)exportLogs();if("close" in b.dataset){$("summary").hidden=true;store.del(SUMKEY)}});
+$("importBtn").addEventListener("click",()=>$("import").click());
 $("import").addEventListener("change",()=>{const f=$("import").files[0];if(f)importLogs(f);$("import").value=""});
 if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
 const saved=store.get(SKEY,null);
-renderDaySelect(saved&&saved.day);reset();restore(saved);setInterval(tick,250);
+renderDaySelect(saved&&saved.day);reset();restore(saved);showLastBackup();
+const lastSum=store.get(SUMKEY,null);
+if(lastSum&&lastSum.date===today()&&state==="ready"){$("summary").innerHTML=lastSum.html;$("summary").hidden=false}else store.del(SUMKEY);setInterval(tick,250);
 </script>
 </body></html>
