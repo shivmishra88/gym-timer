@@ -5,7 +5,10 @@ A single-page, mobile-friendly workout timer and tracker for a Monday–Saturday
 - 3-second countdown before each set, with sound and vibration cues
 - Automatic rest timer per exercise, then auto-advance to the next set/exercise
 - Pause, skip rest, reset, and total elapsed time
-- Log weight and reps per set; shows your previous workout for each exercise
+- Log weight and reps per set; shows last session's numbers and pre-fills them
+- Per-set rep targets (e.g. set 2 of "15, 12, 10, 8" shows 12)
+- Timers use the wall clock, so they stay correct after the phone locks; the screen is kept awake during a workout
+- An in-progress workout survives a reload or the app being closed (for up to 3 hours)
 - Logs are stored in `localStorage` (on this device/browser only)
 - PWA manifest so it can be added to the iPhone Home Screen
 

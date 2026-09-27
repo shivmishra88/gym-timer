@@ -75,7 +75,7 @@ select,input{background:white;color:#111827}select{flex:1}button{font-weight:750
 </div>
 
 <div id="list" class="list"></div>
-<div class="notice">Your workout log is saved locally in this browser on this device.</div>
+<div class="notice">Your workout log and progress are saved locally in this browser on this device.</div>
 </div>
 
 <script>
@@ -88,23 +88,43 @@ fri:[["Flat Bench Press",4,"15, 12, 10, 8",150],["Bar Dips + Pec Fly",2,"10 + 15
 sat:[["T-Bar Row",4,"12, 10, 8, 8",150],["Underhand Lat Pull Down",3,"12, 10, 8",120],["Shrugs",3,"15–12",75],["Deadlift",3,"12, 10, 8",180],["Barbell Curl",4,"12, 10, 8, 8",75],["Hammer Curl",3,"12–10",60]]
 };
 
-const KEY="gymTrackerLogsV1";
-let day="mon",items=W.mon,i=0,set=1,state="ready",remaining=0,paused=false,timer=null,startAt=0,elapsedTimer=null,countdownTimer=null;
+const KEY="gymTrackerLogsV1",SKEY="gymTrackerSessionV1";
+let day="mon",items=W.mon,i=0,set=1,state="ready",paused=false,endAt=0,remainingMs=0,startAt=0,pausedMs=0,pausedAt=0,session=0,lastShown=null,wakeLock=null;
 
 const $=id=>document.getElementById(id);
 const fmt=s=>{s=Math.max(0,Math.round(s));return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0")};
-const loadLogs=()=>JSON.parse(localStorage.getItem(KEY)||"{}");
-const saveLogs=x=>localStorage.setItem(KEY,JSON.stringify(x));
+const today=()=>new Date().toLocaleDateString("en-CA");
+const store={get(k,d){try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
+const loadLogs=()=>store.get(KEY,{});
+const saveLogs=x=>store.set(KEY,x);
+const active=()=>state!=="ready"&&state!=="done";
 
 let audioCtx=null;
 function audio(){if(!audioCtx){const C=window.AudioContext||window.webkitAudioContext;if(!C)return null;audioCtx=new C()}if(audioCtx.state==="suspended")audioCtx.resume();return audioCtx}
 function beep(freq=700,duration=.12){try{const c=audio();if(!c)return;const o=c.createOscillator(),g=c.createGain();o.frequency.value=freq;g.gain.value=.08;o.connect(g);g.connect(c.destination);o.start();g.gain.exponentialRampToValueAtTime(.001,c.currentTime+duration);o.stop(c.currentTime+duration)}catch(e){}}
 function vibrate(p=[100]){if(navigator.vibrate)navigator.vibrate(p)}
 
+// Keep the screen on during a workout so the timer stays visible and running
+async function wake(){if(wakeLock||!("wakeLock" in navigator)||document.visibilityState!=="visible")return;try{wakeLock=await navigator.wakeLock.request("screen");wakeLock.addEventListener("release",()=>{wakeLock=null})}catch(e){}}
+function release(){if(wakeLock){wakeLock.release().catch(()=>{});wakeLock=null}}
+
 function exerciseKey(){return day+"::"+items[i][0]}
+// "15, 12, 10, 8" with 4 sets → the target for this set; anything else is shown as-is
+function target(){const t=items[i][2],p=t.split(",").map(s=>s.trim());return p.length===items[i][1]?p[set-1]:t}
+function entries(){return loadLogs()[exerciseKey()]||[]}
+function prevEntry(){const l=entries().filter(e=>e.session!==session);return l[l.length-1]}
+function curEntry(){return session?entries().find(e=>e.session===session):null}
+const fmtSets=e=>e.sets.map(x=>x.weight+"kg × "+x.reps).join(" · ");
 function showHistory(){
- const logs=loadLogs()[exerciseKey()]||[];
- $("history").innerHTML=logs.length?`Previous: <b>${logs[logs.length-1].sets.map(x=>x.weight+"kg × "+x.reps).join(" · ")}</b>`:"Previous workout: —";
+ const p=prevEntry(),c=curEntry();
+ $("history").innerHTML=(p?`Last time (${p.date}): <b>${fmtSets(p)}</b>`:"Last time: —")+(c?`<br>Today: <b>${fmtSets(c)}</b>`:"");
+}
+// Pre-fill from the same set last session, else the last set logged today
+function prefill(){
+ const p=prevEntry(),c=curEntry();
+ const s=p&&p.sets.find(x=>x.set===set)||c&&c.sets[c.sets.length-1]||p&&p.sets[p.sets.length-1];
+ const v=x=>x&&x!=="—"?x:"";
+ $("weight").value=v(s&&s.weight);$("reps").value=v(s&&s.reps);
 }
 function render(){
  $("list").innerHTML=items.map((x,n)=>`<div class="row ${n===i?'current':''}">
@@ -112,55 +132,104 @@ function render(){
  <span class="muted">${x[3]?fmt(x[3])+" rest":"timed"}</span></div>`).join("");
  showHistory();
 }
+function stats(){$("set").textContent=`${set}/${items[i][1]}`;$("exno").textContent=`${i+1}/${items.length}`}
+function saveSession(){store.set(SKEY,{day,i,set,state,paused,endAt,remainingMs,startAt,pausedMs,pausedAt,session,saved:Date.now()})}
+function unpause(){if(paused){pausedMs+=Date.now()-pausedAt;paused=false}$("pause").textContent="Ⅱ Pause"}
+function remainingSec(){return Math.ceil((paused?remainingMs:endAt-Date.now())/1000)}
+
 function reset(){
- clearInterval(timer);clearInterval(elapsedTimer);clearInterval(countdownTimer);
- day=$("day").value;items=W[day];i=0;set=1;state="ready";paused=false;
+ day=$("day").value;items=W[day];i=0;set=1;state="ready";paused=false;session=0;lastShown=null;
+ store.del(SKEY);release();
  $("phase").textContent="READY";$("time").textContent="00:00";$("exercise").textContent="Ready to train";
  $("info").textContent="Tap Start. You'll get a 3-second countdown before each set.";
  $("countdown").textContent="";$("set").textContent="—";$("exno").textContent="—";$("elapsed").textContent="00:00";
- $("action").disabled=true;$("action").textContent="START SET";$("pause").textContent="Ⅱ Pause";$("weight").value="";$("reps").value="";render();
+ $("action").disabled=true;$("action").textContent="START SET";$("pause").textContent="Ⅱ Pause";$("weight").value="";$("reps").value="";
+ $("start").disabled=false;render();
 }
 function prepareSet(){
- state="countdown";paused=false;let n=3;
- $("phase").textContent="GET READY";$("time").textContent="00:0"+n;$("exercise").textContent=items[i][0];
- $("info").textContent=`Set ${set} of ${items[i][1]} · Target: ${items[i][2]}`;
- $("countdown").textContent="Get into position…";$("action").disabled=true;render();beep(500);
- clearInterval(countdownTimer);
- countdownTimer=setInterval(()=>{if(paused)return;n--;if(n>0){$("time").textContent="00:0"+n;$("countdown").textContent=n===1?"GO NEXT!":"Get ready…";beep(n===1?900:600,.1);vibrate(n===1?[150]:[50]);}else{clearInterval(countdownTimer);startSet()}},1000);
+ unpause();state="countdown";endAt=Date.now()+3000;lastShown=3;
+ $("phase").textContent="GET READY";$("time").textContent="00:03";$("exercise").textContent=items[i][0];
+ $("info").textContent=`Set ${set} of ${items[i][1]} · Target: ${target()}`;
+ $("countdown").textContent="Get into position…";$("action").disabled=true;prefill();render();beep(500);saveSession();
+}
+function countdownSecond(s){
+ if(s>0){$("time").textContent="00:0"+s;$("countdown").textContent=s===1?"GO NEXT!":"Get ready…";beep(s===1?900:600,.1);vibrate(s===1?[150]:[50])}
+ else startSet();
 }
 function startWorkout(){
- if(state==="ready"||state==="done"){i=0;set=1;startAt=Date.now();clearInterval(elapsedTimer);elapsedTimer=setInterval(()=>{$("elapsed").textContent=fmt((Date.now()-startAt)/1000)},500)}
- prepareSet();
+ if(active())return;
+ i=0;set=1;session=startAt=Date.now();pausedMs=0;paused=false;
+ $("start").disabled=true;wake();prepareSet();
 }
 function startSet(){
- state="work";paused=false;$("phase").textContent="WORK";$("time").textContent="GO";$("countdown").textContent="";
- $("exercise").textContent=items[i][0];$("info").textContent=`Set ${set} of ${items[i][1]} · Target: ${items[i][2]}`;
- $("set").textContent=`${set}/${items[i][1]}`;$("exno").textContent=`${i+1}/${items.length}`;
- $("action").disabled=false;$("action").textContent="✓ SET COMPLETE — START REST";render();beep(1000,.2);vibrate([200]);
+ unpause();state="work";$("phase").textContent="WORK";$("time").textContent="GO";$("countdown").textContent="";
+ $("exercise").textContent=items[i][0];$("info").textContent=`Set ${set} of ${items[i][1]} · Target: ${target()}`;stats();
+ $("action").disabled=false;$("action").textContent="✓ SET COMPLETE — START REST";render();beep(1000,.2);vibrate([200]);saveSession();
 }
 function saveCurrentSet(){
  const w=$("weight").value.trim(),r=$("reps").value.trim();
  if(!w&&!r)return;
- const logs=loadLogs();const k=exerciseKey();if(!logs[k])logs[k]=[];
- let entry=logs[k][logs[k].length-1];
- if(!entry||entry.day!==day||entry.date!==new Date().toISOString().slice(0,10)){entry={day,date:new Date().toISOString().slice(0,10),sets:[]};logs[k].push(entry)}
- entry.sets.push({set,weight:w||"—",reps:r||"—"});saveLogs(logs);
+ const logs=loadLogs(),k=exerciseKey();if(!logs[k])logs[k]=[];
+ let entry=logs[k].find(e=>e.session===session);
+ if(!entry){entry={day,date:today(),session,sets:[]};logs[k].push(entry)}
+ const rec={set,weight:w||"—",reps:r||"—"},n=entry.sets.findIndex(x=>x.set===set);
+ if(n<0)entry.sets.push(rec);else entry.sets[n]=rec;
+ saveLogs(logs);
+}
+function showRest(){
+ $("phase").textContent="REST";$("time").textContent=fmt(remainingSec());$("exercise").textContent=items[i][0];$("countdown").textContent="";
+ $("info").textContent=set<items[i][1]?`Rest now. Next is Set ${set+1}.`:i<items.length-1?`Rest now. Next: ${items[i+1][0]}`:"Rest now. Then you're done.";
+ $("action").disabled=true;$("action").textContent="RESTING…";
 }
 function completeSet(){
- if(state!=="work")return;saveCurrentSet();state="rest";remaining=items[i][3]||60;
- $("phase").textContent="REST";$("time").textContent=fmt(remaining);$("exercise").textContent=items[i][0];
- $("info").textContent=set<items[i][1]?`Rest now. Next is Set ${set+1}.`:i<items.length-1?`Rest now. Next: ${items[i+1][0]}`:"Rest now. Then you're done.";
- $("action").disabled=true;$("action").textContent="RESTING…";vibrate([100,80,100]);clearInterval(timer);
- timer=setInterval(()=>{if(paused)return;remaining--;$("time").textContent=fmt(remaining);if(remaining<=3&&remaining>0){beep(remaining===1?1000:750,.1);vibrate([60])}if(remaining<=0){clearInterval(timer);nextStep()}},1000);
+ if(state!=="work")return;saveCurrentSet();state="rest";
+ const rest=items[i][3]||60;endAt=Date.now()+rest*1000;lastShown=rest;
+ showRest();render();vibrate([100,80,100]);saveSession();
+}
+function restSecond(s){
+ if(s>0){$("time").textContent=fmt(s);if(s<=3){beep(s===1?1000:750,.1);vibrate([60])}}
+ else nextStep();
 }
 function nextStep(){
- if(set<items[i][1]){set++;$("weight").value="";$("reps").value="";prepareSet()}
- else if(i<items.length-1){i++;set=1;$("weight").value="";$("reps").value="";prepareSet()}
- else{state="done";clearInterval(elapsedTimer);$("phase").textContent="COMPLETE 🎉";$("time").textContent="00:00";$("exercise").textContent="Workout complete";$("info").textContent="Great work. Cool down, hydrate and recover.";$("countdown").textContent="";$("set").textContent="✓";$("action").disabled=true;$("action").textContent="WORKOUT COMPLETE";beep(1200,.25);vibrate([150,80,150,80,300]);render()}
+ if(set<items[i][1]){set++;prepareSet()}
+ else if(i<items.length-1){i++;set=1;prepareSet()}
+ else{
+  unpause();state="done";store.del(SKEY);release();$("start").disabled=false;
+  $("phase").textContent="COMPLETE 🎉";$("time").textContent="00:00";$("exercise").textContent="Workout complete";$("info").textContent="Great work. Cool down, hydrate and recover.";$("countdown").textContent="";$("set").textContent="✓";$("action").disabled=true;$("action").textContent="WORKOUT COMPLETE";beep(1200,.25);vibrate([150,80,150,80,300]);render();
+ }
 }
-$("day").addEventListener("change",reset);$("start").addEventListener("click",startWorkout);$("reset").addEventListener("click",reset);
-$("action").addEventListener("click",completeSet);$("pause").addEventListener("click",()=>{paused=!paused;$("pause").textContent=paused?"▶ Resume":"Ⅱ Pause"});
-$("skip").addEventListener("click",()=>{if(state==="rest"){clearInterval(timer);nextStep()}});
-reset();
+function togglePause(){
+ if(!active())return;const now=Date.now();
+ if(paused){pausedMs+=now-pausedAt;paused=false;endAt=now+remainingMs}
+ else{paused=true;pausedAt=now;remainingMs=endAt-now}
+ $("pause").textContent=paused?"▶ Resume":"Ⅱ Pause";saveSession();
+}
+// Timers are computed from the wall clock, so they stay correct after the phone locks or the tab is backgrounded
+function tick(){
+ if(!active())return;
+ $("elapsed").textContent=fmt(((paused?pausedAt:Date.now())-startAt-pausedMs)/1000);
+ if(paused||(state!=="countdown"&&state!=="rest"))return;
+ const s=remainingSec();if(s===lastShown)return;lastShown=s;
+ state==="countdown"?countdownSecond(s):restSecond(s);
+}
+function restore(s){
+ if(!s||!W[s.day]||!W[s.day][s.i]||!["countdown","work","rest"].includes(s.state)||Date.now()-s.saved>3*3600e3)return;
+ ({i,set,state,paused,endAt,remainingMs,startAt,pausedMs,pausedAt,session}=s);
+ day=s.day;$("day").value=day;items=W[day];$("start").disabled=true;stats();
+ if(state==="rest"){lastShown=null;$("pause").textContent=paused?"▶ Resume":"Ⅱ Pause";showRest();prefill();render();saveSession()}
+ else if(state==="work"){prefill();startSet()}
+ else prepareSet();
+ wake();tick();
+}
+const confirmEnd=()=>!active()||confirm("End this workout? Your logged sets are kept.");
+
+$("day").addEventListener("change",()=>{if(confirmEnd())reset();else $("day").value=day});
+$("start").addEventListener("click",startWorkout);$("reset").addEventListener("click",()=>{if(confirmEnd())reset()});
+$("action").addEventListener("click",completeSet);$("pause").addEventListener("click",togglePause);
+$("skip").addEventListener("click",()=>{if(state==="rest")nextStep()});
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&active()){wake();tick()}});
+document.addEventListener("click",()=>{if(active()){wake();audio()}});
+const saved=store.get(SKEY,null);
+reset();restore(saved);setInterval(tick,250);
 </script>
 </body></html>
