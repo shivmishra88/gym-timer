@@ -15,6 +15,10 @@ A single-page, mobile-friendly workout timer and tracker for a Monday–Saturday
 - Progress section: this week, streak, 5-week calendar, per-exercise chart, and editable past sessions
 - Edit the routine in the app (✏️ Edit routine): exercises, sets, targets, rest, day titles, Sunday; renaming keeps history
 - Progression suggestions: hit the top of a set's rep target last time → the weight is pre-filled with the next increment
+- Warm-up sets, bodyweight / weighted / assisted loads (BW, BW+10, BW−20) and per-hand dumbbell weights
+- Rest ±30 s, swap an exercise for today, move exercises between days, muscle tags with weekly sets per muscle
+- Suggestions also cover timed and bodyweight work, plus a deload hint after 3 stalled sessions
+- Dark mode (follows the phone, or pick Light/Dark in Settings)
 - Per-set rep targets (e.g. set 2 of "15, 12, 10, 8" shows 12)
 - Timers use the wall clock, so they stay correct after the phone locks; the screen is kept awake during a workout
 - An in-progress workout survives a reload or the app being closed (for up to 3 hours)

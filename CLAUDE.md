@@ -10,6 +10,8 @@ Live at https://shivmishra88.github.io/gym-timer/ (GitHub Pages, `main` branch r
 - `manifest.json`, `icons/` — PWA manifest and generated dumbbell icons (180/192/512).
 - `tests/` — Playwright browser tests (see Testing).
 
+Colours are CSS custom properties on `:root` (light), redefined for dark under `@media (prefers-color-scheme: dark)` → `:root:not([data-theme="light"])` and under `:root[data-theme="dark"]`. Never hard-code a colour: add a token to all three blocks. SVG chart colours use `style="fill:var(--…)"` because presentation attributes can't take `var()`. The Theme setting (`prefs.theme`: ""/light/dark) is applied by a tiny script in `<head>` before first paint, and by `applyTheme()`, which also updates the `theme-color` meta. The chart accent is `#2a78d6` light / `#3987e5` dark (checked with the dataviz palette validator against each card surface).
+
 ## How the script is organised
 
 - `DEFAULT_DAYS` is the built-in plan; the live plan is `plan = {titles, days}` loaded from storage, with `W = plan.days` (`W[day] = [[name, sets, target, restSeconds, opts], ...]`, days `mon`–`sun`, and a missing day is a rest day). `opts` is `{hand, m, m2}`: per-hand dumbbell weights (×2 for volume), and the muscle (m2 = second half of a superset; keys in `MUSCLES`). `normPlan` fills only the *missing keys* from `DEFAULT_OPTS`, and the editor saves every key explicitly (`hand:false`, `m:""`), so a user's choice is never overwritten. In the editor, rows carry `orig`/`origDay`, so renames and "Move to…" another day carry logs and notes (`migrateRenames`). The routine editor (`openEditor`/`saveEditor`) edits a draft and then calls `applyPlan`; renaming an exercise moves its logs and notes (`migrateRenames`). The editor is disabled mid-workout. `" + "` in a name = superset; a target like `"45–60 sec"` / `"30–45 min"` = timed exercise.
@@ -26,7 +28,7 @@ Live at https://shivmishra88.github.io/gym-timer/ (GitHub Pages, `main` branch r
 | `gymTrackerLogsV1` | `{ "day::Exercise": [ {day, date:"YYYY-MM-DD" (local), session:<start ms>, sets:[{set, weight, reps, weight2, reps2, rpe, time}], warm:[{weight, reps, time}]} ] }` — lists kept in date order; legacy entries may lack `session`. `weight` is a string: `"70"`, `"BW"`, `"BW+10"` or `"BW-20"` (assisted); use `parseW`/`effW` (effective kg = body weight from prefs ± added), never `num()`, on weights. Warm-ups live in `warm` and are ignored by PRs, volume, charts and suggestions |
 | `gymTrackerSessionV1` | in-progress workout state (see `saveSession`) |
 | `gymTrackerNotesV1` | `{ "day::Exercise": "note" }` |
-| `gymTrackerPrefsV1` | `{ lockAlert, inc, lastExport, bw }` (inc = weight increment for suggestions; lastExport = ms of last backup; bw = body weight kg) |
+| `gymTrackerPrefsV1` | `{ lockAlert, inc, lastExport, bw, theme }` (inc = weight increment for suggestions; lastExport = ms of last backup; bw = body weight kg; theme = "" / "light" / "dark") |
 | `gymTrackerAltsV1` | `{ "day::Exercise": [recent alternatives] }` for Swap |
 | `gymTrackerSummaryV1` | `{ date, html }`, the last workout summary, re-shown on reload the same day until dismissed |
 | `gymTrackerPlanV1` | `{ titles:{day:title}, days:{day:[[name, sets, target, restSeconds]]} }` — validated by `validPlan` |
@@ -45,7 +47,7 @@ Progression suggestions (`suggest`/`repTop`) work per set from the same set last
 ```bash
 tests/run.sh      # installs playwright-core once, serves the repo on :8765, runs every tests/*.test.js
 ```
-It needs Google Chrome installed (`channel: 'chrome'`). The tests use Playwright's fake clock, so allow ~300 ms of slack when checking displayed times (the ticker runs every 250 ms). 197 checks across 8 files, all passing. Nothing has been verified on a real iPhone yet (see "Needs checking on device").
+It needs Google Chrome installed (`channel: 'chrome'`). The tests use Playwright's fake clock, so allow ~300 ms of slack when checking displayed times (the ticker runs every 250 ms). 208 checks across 9 files, all passing. Nothing has been verified on a real iPhone yet (see "Needs checking on device").
 
 ## Pushing
 
@@ -69,7 +71,9 @@ The five-step roadmap from the original review is complete. The owner then asked
 - [x] **Batch A — quick wins**: rest ±30 s, lock-screen alert for timed work, backup reminder (summary + "Last backup" in Settings), summary persists after reload (dismissable), countdown copy "Ready… / Set… / Go!", log panel collapses when done, timed/bodyweight suggestions, deload hint.
 - [x] **Batch B — logging**: warm-up sets (toggle; logged in `warm`, rest capped at 60 s, set count unchanged), bodyweight/assisted weights (kg / BW + / BW − selector, since the iPhone decimal keypad has no letters or minus; body weight in Settings), per-hand dumbbell weights (editor checkbox, "/hand" labels, ×2 volume).
 - [x] **Batch C — program**: ⇄ Swap for this workout (progress carries, swap back, recent alternatives), "Move to…" another day in the editor (history moves too), muscle per exercise (+ 2nd for supersets) with defaults, and a "Working sets per muscle this week" bar chart in Progress (cardio excluded, planned muscles shown at 0).
-- [ ] **Batch D — dark mode.**
+- [x] **Batch D — dark mode**: every colour tokenised, dark palette, Auto/Light/Dark setting, status bar colour follows the theme.
+
+All pending features are done except the two left out on purpose (below).
 
 ## Pending items (everything not yet done)
 
@@ -81,10 +85,9 @@ The five-step roadmap from the original review is complete. The owner then asked
 - Thursday has 7 ab exercises × 3 sets; trim to 3–4 with progression.
 - Data inconsistencies: Leg Curl is 4 sets but the target is "15, 10"; Bench Dips target is "controlled".
 
-**Features**
+**Features** (remaining)
 - Optional cloud sync (would need a backend or a GitHub-gist/Drive approach) — not started; owner to decide.
 - lb units — not started; all stored weights are kg, so this needs a unit per set or a display-only conversion.
-- Dark mode.
 
 **Needs checking on device** (only tested in desktop Chrome)
 - Lock-screen rest alert, in both Safari and the Home Screen app (older iOS may stop background audio in Home Screen apps).

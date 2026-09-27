@@ -1,0 +1,26 @@
+const {chromium}=require('playwright-core');
+const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)process.exitCode=1};
+const BASE=process.env.BASE||'http://127.0.0.1:8765';
+(async()=>{
+ const b=await chromium.launch({channel:'chrome'});
+ const bg=p=>p.evaluate(()=>getComputedStyle(document.body).backgroundColor);
+ const meta=p=>p.evaluate(()=>document.querySelector('meta[name="theme-color"]').content);
+ const light='rgb(243, 244, 246)',dark='rgb(11, 15, 23)';
+ const p=await (await b.newContext({colorScheme:'dark',viewport:{width:390,height:844}})).newPage();
+ const errs=[];p.on('pageerror',e=>errs.push(e.message));
+ await p.goto(BASE+'/index.html');await p.evaluate(()=>{localStorage.clear();localStorage.setItem('gymTrackerLogsV1',JSON.stringify({'mon::Decline Bench Press':[{day:'mon',date:'2026-09-21',session:1,sets:[{set:1,weight:'60',reps:'10'}]},{day:'mon',date:'2026-09-28',session:2,sets:[{set:1,weight:'65',reps:'10'}]}]}))});await p.reload();
+ ok(await bg(p)===dark,'auto follows OS dark');
+ ok(await meta(p)==='#0b0f17','status bar color follows theme');
+ ok(await p.$eval('#chart circle',c=>getComputedStyle(c).fill)==='rgb(57, 135, 229)','chart uses dark accent');
+ ok(await p.$eval('#start',e=>getComputedStyle(e).backgroundColor)==='rgb(243, 244, 246)','primary button inverts in dark');
+ await p.selectOption('#theme','light');ok(await bg(p)===light,'Light overrides OS dark');
+ await p.reload();ok(await bg(p)===light&&await p.inputValue('#theme')==='light','Light persists across reload');
+ await p.selectOption('#theme','');ok(await bg(p)===dark,'back to Auto');
+ const q=await (await b.newContext({colorScheme:'light'})).newPage();
+ await q.goto(BASE+'/index.html');await q.evaluate(()=>localStorage.clear());await q.reload();
+ ok(await bg(q)===light,'auto follows OS light');
+ await q.selectOption('#theme','dark');ok(await bg(q)===dark,'Dark overrides OS light');
+ await q.reload();ok(await q.evaluate(()=>document.documentElement.dataset.theme)==='dark'&&await bg(q)===dark,'Dark applied before first paint on reload');
+ ok(errs.length===0,'no page errors '+errs.join(';'));
+ await b.close();
+})();
