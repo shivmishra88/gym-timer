@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gym Tracker">
+<title>Gym Timer & Tracker</title>
+<link rel="manifest" href="manifest.json">
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827;background:#f3f4f6}
+*{box-sizing:border-box}body{margin:0}.app{max-width:760px;margin:auto;padding:16px 16px calc(28px + env(safe-area-inset-bottom))}
+h1{font-size:24px;margin:8px 0 4px}.sub{color:#6b7280;font-size:14px;margin-bottom:14px}
+.top{display:flex;gap:8px;margin-bottom:12px}select,button,input{min-height:48px;border:1px solid #d1d5db;border-radius:13px;padding:10px 13px;font-size:16px}
+select,input{background:white;color:#111827}select{flex:1}button{font-weight:750;background:#111827;color:white}.secondary{background:white;color:#111827}
+.card{background:white;border:1px solid #e5e7eb;border-radius:20px;padding:20px;text-align:center;margin-bottom:12px}
+.phase{font-size:13px;letter-spacing:.1em;font-weight:850;color:#6b7280}.time{font-size:68px;font-weight:900;line-height:1.05;margin:8px 0}
+.exercise{font-size:24px;font-weight:850}.info{color:#6b7280;margin:6px 0 14px}.countdown{font-weight:800;min-height:24px}
+.primary{width:100%;font-size:19px;min-height:60px}.primary:disabled{opacity:.45}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}.stat{background:white;border:1px solid #e5e7eb;border-radius:14px;padding:11px;text-align:center}.stat small{color:#6b7280}.stat b{display:block;font-size:18px;margin-top:3px}
+.controls{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px}
+.log{background:white;border:1px solid #e5e7eb;border-radius:18px;padding:15px;margin-bottom:12px}.log h2{font-size:18px;margin:0 0 10px}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:8px}.fields label{font-size:12px;color:#6b7280;display:block;margin-bottom:4px}.fields input{width:100%}
+.history{margin-top:10px;padding:10px;background:#f9fafb;border-radius:12px;font-size:13px;color:#4b5563}
+.list{background:white;border:1px solid #e5e7eb;border-radius:16px;overflow:hidden}.row{display:grid;grid-template-columns:32px 1fr auto;gap:8px;padding:12px;border-bottom:1px solid #eee}.row:last-child{border:0}.current{background:#eef2ff}.muted{font-size:12px;color:#6b7280;margin-top:3px}
+.notice{font-size:12px;color:#6b7280;margin-top:8px;text-align:center}
+@media(max-width:480px){.time{font-size:57px}.exercise{font-size:21px}.controls{grid-template-columns:1fr 1fr}.controls button:last-child{grid-column:1/-1}}
+</style>
+</head>
+<body>
+<div class="app">
+<h1>🏋️ Gym Timer & Tracker</h1>
+<div class="sub">Timer + weights + reps + workout history</div>
+<div class="top">
+<select id="day">
+<option value="mon">Monday — Push 1</option><option value="tue">Tuesday — Legs</option>
+<option value="wed">Wednesday — Pull 1</option><option value="thu">Thursday — Cardio + Abs</option>
+<option value="fri">Friday — Push 2</option><option value="sat">Saturday — Pull 2</option>
+</select>
+<button id="start">▶ Start</button>
+</div>
+
+<div class="card">
+<div id="phase" class="phase">READY</div>
+<div id="time" class="time">00:00</div>
+<div id="exercise" class="exercise">Ready to train</div>
+<div id="info" class="info">Tap Start. You'll get a 3-second countdown before each set.</div>
+<div id="countdown" class="countdown"></div>
+<button id="action" class="primary" disabled>START SET</button>
+</div>
+
+<div class="stats">
+<div class="stat"><small>CURRENT SET</small><b id="set">—</b></div>
+<div class="stat"><small>EXERCISE</small><b id="exno">—</b></div>
+<div class="stat"><small>ELAPSED</small><b id="elapsed">00:00</b></div>
+</div>
+
+<div class="log">
+<h2>📈 Log this set</h2>
+<div class="fields">
+<div><label for="weight">Weight (kg)</label><input id="weight" inputmode="decimal" placeholder="e.g. 70"></div>
+<div><label for="reps">Reps completed</label><input id="reps" inputmode="numeric" placeholder="e.g. 10"></div>
+</div>
+<div id="history" class="history">Previous workout: —</div>
+</div>
+
+<div class="controls">
+<button id="pause" class="secondary">Ⅱ Pause</button>
+<button id="skip" class="secondary">Skip Rest →</button>
+<button id="reset" class="secondary">↻ Reset</button>
+</div>
+
+<div id="list" class="list"></div>
+<div class="notice">Your workout log is saved locally in this browser on this device.</div>
+</div>
+
+<script>
+const W={
+mon:[["Decline Bench Press",4,"12, 10, 8, 6",150],["Incline Dumbbell Press + Incline Fly",2,"12 + 15",120],["Back Press",4,"15, 12, 10, 8",120],["Side Laterals",3,"12–10",60],["Bench Dips",2,"controlled",75],["V-Rod Push Down",4,"15, 12, 10, 8",60]],
+tue:[["Free-hand Squats",2,"25 each",90],["Leg Extension",3,"15 each",75],["Leg Press",4,"15, 12, 10, 10",150],["Dumbbell Squats",2,"15, 12",90],["Lunges",2,"15 each",90],["Leg Curl",4,"15, 10",75],["Calves",3,"15–20",60]],
+wed:[["Front Lat Pull Down",4,"15, 12, 10, 8",120],["Seated Row",3,"12, 10, 8",120],["Close Grip Lat Pull Down",2,"12 each",90],["Reverse Pec Fly",4,"15–10",60],["Alternate Dumbbell Curl",3,"12, 10, 8",60],["Preacher Curl",3,"12, 10, 8",60]],
+thu:[["Cardio",1,"30–45 min",0],["Crunches",3,"15–20",60],["Leg Raises",3,"15–20",60],["Plank",3,"45–60 sec",60],["Russian Twist",3,"20 each side",60],["Hanging Knee Raise",3,"12–15",60],["Cable Crunch",3,"15–20",60]],
+fri:[["Flat Bench Press",4,"15, 12, 10, 8",150],["Bar Dips + Pec Fly",2,"10 + 15",120],["Seated Dumbbell Press",4,"12, 10, 8, 8",120],["Bar Shrugs",3,"15–12",75],["Overhead Extension",3,"12, 10, 8",75],["Straight Rod Push Down",3,"12–8",60]],
+sat:[["T-Bar Row",4,"12, 10, 8, 8",150],["Underhand Lat Pull Down",3,"12, 10, 8",120],["Shrugs",3,"15–12",75],["Deadlift",3,"12, 10, 8",180],["Barbell Curl",4,"12, 10, 8, 8",75],["Hammer Curl",3,"12–10",60]]
+};
+
+const KEY="gymTrackerLogsV1";
+let day="mon",items=W.mon,i=0,set=1,state="ready",remaining=0,paused=false,timer=null,startAt=0,elapsedTimer=null,countdownTimer=null;
+
+const $=id=>document.getElementById(id);
+const fmt=s=>{s=Math.max(0,Math.round(s));return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0")};
+const loadLogs=()=>JSON.parse(localStorage.getItem(KEY)||"{}");
+const saveLogs=x=>localStorage.setItem(KEY,JSON.stringify(x));
+
+function beep(freq=700,duration=.12){try{const C=window.AudioContext||window.webkitAudioContext;if(!C)return;const c=new C(),o=c.createOscillator(),g=c.createGain();o.frequency.value=freq;g.gain.value=.08;o.connect(g);g.connect(c.destination);o.start();g.gain.exponentialRampToValueAtTime(.001,c.currentTime+duration);o.stop(c.currentTime+duration)}catch(e){}}
+function vibrate(p=[100]){if(navigator.vibrate)navigator.vibrate(p)}
+
+function exerciseKey(){return day+"::"+items[i][0]}
+function showHistory(){
+ const logs=loadLogs()[exerciseKey()]||[];
+ $("history").innerHTML=logs.length?`Previous: <b>${logs[logs.length-1].sets.map(x=>x.weight+"kg × "+x.reps).join(" · ")}</b>`:"Previous workout: —";
+}
+function render(){
+ $("list").innerHTML=items.map((x,n)=>`<div class="row ${n===i?'current':''}">
+ <b>${n+1}</b><div>${x[0]}<div class="muted">${x[1]} sets · ${x[2]}</div></div>
+ <span class="muted">${x[3]?fmt(x[3])+" rest":"timed"}</span></div>`).join("");
+ showHistory();
+}
+function reset(){
+ clearInterval(timer);clearInterval(elapsedTimer);clearInterval(countdownTimer);
+ day=$("day").value;items=W[day];i=0;set=1;state="ready";paused=false;
+ $("phase").textContent="READY";$("time").textContent="00:00";$("exercise").textContent="Ready to train";
+ $("info").textContent="Tap Start. You'll get a 3-second countdown before each set.";
+ $("countdown").textContent="";$("set").textContent="—";$("exno").textContent="—";$("elapsed").textContent="00:00";
+ $("action").disabled=true;$("action").textContent="START SET";$("pause").textContent="Ⅱ Pause";$("weight").value="";$("reps").value="";render();
+}
+function prepareSet(){
+ state="countdown";paused=false;let n=3;
+ $("phase").textContent="GET READY";$("time").textContent="00:0"+n;$("exercise").textContent=items[i][0];
+ $("info").textContent=`Set ${set} of ${items[i][1]} · Target: ${items[i][2]}`;
+ $("countdown").textContent="Get into position…";$("action").disabled=true;render();beep(500);
+ clearInterval(countdownTimer);
+ countdownTimer=setInterval(()=>{if(paused)return;n--;if(n>0){$("time").textContent="00:0"+n;$("countdown").textContent=n===1?"GO NEXT!":"Get ready…";beep(n===1?900:600,.1);vibrate(n===1?[150]:[50]);}else{clearInterval(countdownTimer);startSet()}},1000);
+}
+function startWorkout(){
+ if(state==="ready"||state==="done"){i=0;set=1;startAt=Date.now();clearInterval(elapsedTimer);elapsedTimer=setInterval(()=>{$("elapsed").textContent=fmt((Date.now()-startAt)/1000)},500)}
+ prepareSet();
+}
+function startSet(){
+ state="work";paused=false;$("phase").textContent="WORK";$("time").textContent="GO";$("countdown").textContent="";
+ $("exercise").textContent=items[i][0];$("info").textContent=`Set ${set} of ${items[i][1]} · Target: ${items[i][2]}`;
+ $("set").textContent=`${set}/${items[i][1]}`;$("exno").textContent=`${i+1}/${items.length}`;
+ $("action").disabled=false;$("action").textContent="✓ SET COMPLETE — START REST";render();beep(1000,.2);vibrate([200]);
+}
+function saveCurrentSet(){
+ const w=$("weight").value.trim(),r=$("reps").value.trim();
+ if(!w&&!r)return;
+ const logs=loadLogs();const k=exerciseKey();if(!logs[k])logs[k]=[];
+ let entry=logs[k][logs[k].length-1];
+ if(!entry||entry.day!==day||entry.date!==new Date().toISOString().slice(0,10)){entry={day,date:new Date().toISOString().slice(0,10),sets:[]};logs[k].push(entry)}
+ entry.sets.push({set,weight:w||"—",reps:r||"—"});saveLogs(logs);
+}
+function completeSet(){
+ if(state!=="work")return;saveCurrentSet();state="rest";remaining=items[i][3]||60;
+ $("phase").textContent="REST";$("time").textContent=fmt(remaining);$("exercise").textContent=items[i][0];
+ $("info").textContent=set<items[i][1]?`Rest now. Next is Set ${set+1}.`:i<items.length-1?`Rest now. Next: ${items[i+1][0]}`:"Rest now. Then you're done.";
+ $("action").disabled=true;$("action").textContent="RESTING…";vibrate([100,80,100]);clearInterval(timer);
+ timer=setInterval(()=>{if(paused)return;remaining--;$("time").textContent=fmt(remaining);if(remaining<=3&&remaining>0){beep(remaining===1?1000:750,.1);vibrate([60])}if(remaining<=0){clearInterval(timer);nextStep()}},1000);
+}
+function nextStep(){
+ if(set<items[i][1]){set++;$("weight").value="";$("reps").value="";prepareSet()}
+ else if(i<items.length-1){i++;set=1;$("weight").value="";$("reps").value="";prepareSet()}
+ else{state="done";clearInterval(elapsedTimer);$("phase").textContent="COMPLETE 🎉";$("time").textContent="00:00";$("exercise").textContent="Workout complete";$("info").textContent="Great work. Cool down, hydrate and recover.";$("countdown").textContent="";$("set").textContent="✓";$("action").disabled=true;$("action").textContent="WORKOUT COMPLETE";beep(1200,.25);vibrate([150,80,150,80,300]);render()}
+}
+$("day").addEventListener("change",reset);$("start").addEventListener("click",startWorkout);$("reset").addEventListener("click",reset);
+$("action").addEventListener("click",completeSet);$("pause").addEventListener("click",()=>{paused=!paused;$("pause").textContent=paused?"▶ Resume":"Ⅱ Pause"});
+$("skip").addEventListener("click",()=>{if(state==="rest"){clearInterval(timer);nextStep()}});
+reset();
+</script>
+</body></html>

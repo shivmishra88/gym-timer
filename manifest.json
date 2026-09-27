@@ -1,0 +1,9 @@
+{
+"name":"Gym Timer & Tracker",
+"short_name":"Gym Tracker",
+"start_url":"./index.html",
+"display":"standalone",
+"background_color":"#f3f4f6",
+"theme_color":"#111827",
+"icons":[]
+}
