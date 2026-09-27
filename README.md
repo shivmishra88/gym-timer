@@ -6,6 +6,11 @@ A single-page, mobile-friendly workout timer and tracker for a Monday–Saturday
 - Automatic rest timer per exercise, then auto-advance to the next set/exercise
 - Pause, skip rest, reset, and total elapsed time
 - Log weight and reps per set; shows last session's numbers and pre-fills them
+- Every completed set is logged; edit, delete, or add sets from the Today list
+- Supersets (names with " + ") log weight/reps for each half
+- Optional RPE per set and a per-exercise note that carries over to next time
+- Work phase shows a stopwatch; timed exercises (e.g. "45–60 sec") beep at the target and record the time
+- Do later / Skip exercise, or tap any exercise in the list to jump to it; the workout ends when every exercise is done or skipped
 - Per-set rep targets (e.g. set 2 of "15, 12, 10, 8" shows 12)
 - Timers use the wall clock, so they stay correct after the phone locks; the screen is kept awake during a workout
 - An in-progress workout survives a reload or the app being closed (for up to 3 hours)

@@ -30,6 +30,15 @@ select,input{background:white;color:#111827}select{flex:1}button{font-weight:750
 .notice{font-size:12px;color:#6b7280;margin-top:8px;text-align:center}
 .settings{margin-top:12px}.toggle{display:flex;gap:10px;align-items:flex-start;text-align:left;font-size:15px}.toggle input{min-height:0;width:22px;height:22px;margin:1px 0 0;padding:0;flex:none}
 .backup{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+[hidden]{display:none!important}
+.exctl{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:-4px 0 12px}button:disabled{opacity:.45}
+.partname{font-size:13px;font-weight:750;margin:10px 0 6px}.partname:first-of-type{margin-top:0}.extra{margin-top:10px}.extra select{width:100%}
+.auto{min-height:48px;display:flex;align-items:center;color:#6b7280;font-size:14px}
+.today{margin-top:10px}.todayhead{font-size:12px;font-weight:800;letter-spacing:.06em;color:#6b7280;margin-bottom:6px;text-transform:uppercase}
+.setrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 0;border-top:1px solid #f0f0f0;font-size:14px}.setrow>span{flex:1;min-width:0}
+.mini{min-height:36px;padding:6px 11px;font-size:14px;border-radius:10px}.addset{margin-top:6px}
+.editor input{width:64px;min-height:40px;padding:6px 8px}.editor .plus{color:#6b7280}
+.row.done{opacity:.55}.row.tap{cursor:pointer}
 @media(max-width:480px){.time{font-size:57px}.exercise{font-size:21px}.controls{grid-template-columns:1fr 1fr}.controls button:last-child{grid-column:1/-1}}
 </style>
 </head>
@@ -63,17 +72,33 @@ select,input{background:white;color:#111827}select{flex:1}button{font-weight:750
 
 <div class="log">
 <h2>📈 Log this set</h2>
+<div id="nameA" class="partname" hidden></div>
 <div class="fields">
-<div><label for="weight">Weight (kg)</label><input id="weight" inputmode="decimal" placeholder="e.g. 70"></div>
-<div><label for="reps">Reps completed</label><input id="reps" inputmode="numeric" placeholder="e.g. 10"></div>
+<div><label for="weight" id="wlabel">Weight (kg)</label><input id="weight" inputmode="decimal" placeholder="e.g. 70"></div>
+<div id="repsBox"><label for="reps">Reps completed</label><input id="reps" inputmode="numeric" placeholder="e.g. 10"></div>
+<div id="timeBox" hidden><label>Time</label><div class="auto">Recorded automatically</div></div>
 </div>
-<div id="history" class="history">Previous workout: —</div>
+<div id="partB" hidden><div id="nameB" class="partname"></div>
+<div class="fields">
+<div><label for="weight2">Weight (kg)</label><input id="weight2" inputmode="decimal" placeholder="e.g. 10"></div>
+<div><label for="reps2">Reps completed</label><input id="reps2" inputmode="numeric" placeholder="e.g. 15"></div>
+</div></div>
+<div class="fields extra">
+<div><label for="rpe">Effort (RPE, optional)</label><select id="rpe"><option value="">—</option><option>6</option><option>7</option><option>7.5</option><option>8</option><option>8.5</option><option>9</option><option>9.5</option><option>10</option></select></div>
+<div><label for="note">Note (kept for next time)</label><input id="note" placeholder="e.g. seat at 4"></div>
+</div>
+<div id="history" class="history">Last time: —</div>
+<div id="today" class="today"></div>
 </div>
 
 <div class="controls">
 <button id="pause" class="secondary">Ⅱ Pause</button>
 <button id="skip" class="secondary">Skip Rest →</button>
 <button id="reset" class="secondary">↻ Reset</button>
+</div>
+<div class="exctl">
+<button id="later" class="secondary">↷ Do later</button>
+<button id="skipEx" class="secondary">✕ Skip exercise</button>
 </div>
 
 <div id="list" class="list"></div>
@@ -98,8 +123,10 @@ fri:[["Flat Bench Press",4,"15, 12, 10, 8",150],["Bar Dips + Pec Fly",2,"10 + 15
 sat:[["T-Bar Row",4,"12, 10, 8, 8",150],["Underhand Lat Pull Down",3,"12, 10, 8",120],["Shrugs",3,"15–12",75],["Deadlift",3,"12, 10, 8",180],["Barbell Curl",4,"12, 10, 8, 8",75],["Hammer Curl",3,"12–10",60]]
 };
 
-const KEY="gymTrackerLogsV1",SKEY="gymTrackerSessionV1";
+const KEY="gymTrackerLogsV1",SKEY="gymTrackerSessionV1",NKEY="gymTrackerNotesV1";
 let day="mon",items=W.mon,i=0,set=1,state="ready",paused=false,endAt=0,remainingMs=0,startAt=0,pausedMs=0,pausedAt=0,session=0,lastShown=null,wakeLock=null;
+// progress: sets completed per exercise this session; skipped: exercises skipped for today; editing: set number being edited, or "new"
+let progress={},skipped={},editing=null;
 
 const $=id=>document.getElementById(id);
 const fmt=s=>{s=Math.max(0,Math.round(s));return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0")};
@@ -107,7 +134,10 @@ const today=()=>new Date().toLocaleDateString("en-CA");
 const store={get(k,d){try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
 const loadLogs=()=>store.get(KEY,{});
 const saveLogs=x=>store.set(KEY,x);
+const loadNotes=()=>store.get(NKEY,{});
 const active=()=>state!=="ready"&&state!=="done";
+const esc=s=>String(s).replace(/[&<>"']/g,c=>`&#${c.charCodeAt(0)};`);
+const has=v=>v!=null&&v!==""&&v!=="—";
 
 let audioCtx=null;
 function audio(){if(!audioCtx){const C=window.AudioContext||window.webkitAudioContext;if(!C)return null;audioCtx=new C()}if(audioCtx.state==="suspended")audioCtx.resume();return audioCtx}
@@ -140,48 +170,101 @@ async function wake(){if(wakeLock||!("wakeLock" in navigator)||document.visibili
 function release(){if(wakeLock){wakeLock.release().catch(()=>{});wakeLock=null}}
 
 function exerciseKey(){return day+"::"+items[i][0]}
+const done=n=>(progress[items[n][0]]||0)>=items[n][1];
+// "Incline Dumbbell Press + Incline Fly" is a superset: log each half separately
+const parts=()=>items[i][0].split(" + ");
+// "45–60 sec" / "30–45 min" → [min, max] seconds; the work phase counts up and beeps at each
+function timedTarget(){const m=items[i][2].match(/(\d+)\s*(?:[–-]\s*(\d+))?\s*(sec|min)/);if(!m)return null;const u=m[3]==="min"?60:1;return[+m[1]*u,+(m[2]||m[1])*u]}
 // "15, 12, 10, 8" with 4 sets → the target for this set; anything else is shown as-is
 function target(){const t=items[i][2],p=t.split(",").map(s=>s.trim());return p.length===items[i][1]?p[set-1]:t}
 function entries(){return loadLogs()[exerciseKey()]||[]}
 function prevEntry(){const l=entries().filter(e=>e.session!==session);return l[l.length-1]}
 function curEntry(){return session?entries().find(e=>e.session===session):null}
-const fmtSets=e=>e.sets.map(x=>x.weight+"kg × "+x.reps).join(" · ");
-function showHistory(){
- const p=prevEntry(),c=curEntry();
- $("history").innerHTML=(p?`Last time (${p.date}): <b>${fmtSets(p)}</b>`:"Last time: —")+(c?`<br>Today: <b>${fmtSets(c)}</b>`:"");
+function fmtSet(x){
+ const part=(w,r)=>has(w)&&has(r)?`${w}kg × ${r}`:has(w)?`${w}kg`:has(r)?`${r} reps`:"";
+ let s=part(x.weight,x.reps);const b=part(x.weight2,x.reps2);if(b)s=(s||"—")+" + "+b;
+ if(timedTarget()&&x.time)s=(s?s+" · ":"")+fmt(x.time);
+ if(has(x.rpe))s+=` @${x.rpe}`;
+ return s||"not logged";
 }
+const fmtSets=e=>e.sets.map(fmtSet).join(" · ");
+function configureFields(){
+ const p=parts(),sup=p.length>1,timed=!!timedTarget();
+ $("nameA").hidden=$("partB").hidden=!sup;$("nameA").textContent=p[0];$("nameB").textContent=p[1]||"";
+ $("repsBox").hidden=timed;$("timeBox").hidden=!timed;$("wlabel").textContent=timed?"Weight (kg, optional)":"Weight (kg)";
+ $("note").value=loadNotes()[exerciseKey()]||"";
+}
+function showHistory(){
+ const p=prevEntry();
+ $("history").innerHTML=p?`Last time (${esc(p.date)}): <b>${esc(fmtSets(p))}</b>`:"Last time: —";
+ renderToday();
+}
+function editorRow(x){
+ const val=v=>has(v)?esc(v):"",sup=parts().length>1,timed=!!timedTarget();
+ return `<div class="setrow editor" data-set="${x.set}"><b>Set ${x.set}</b>
+ <input class="ew" inputmode="decimal" placeholder="kg" value="${val(x.weight)}">${timed?"":`<input class="er" inputmode="numeric" placeholder="reps" value="${val(x.reps)}">`}
+ ${sup?`<span class="plus">+</span><input class="ew2" inputmode="decimal" placeholder="kg" value="${val(x.weight2)}"><input class="er2" inputmode="numeric" placeholder="reps" value="${val(x.reps2)}">`:""}
+ <input class="erpe" inputmode="decimal" placeholder="RPE" value="${val(x.rpe)}">
+ <button class="mini" data-save>Save</button><button class="mini secondary" data-cancel>Cancel</button></div>`;
+}
+function renderToday(){
+ if(!session){$("today").innerHTML="";return}
+ const c=curEntry(),sets=c?c.sets:[];
+ const rows=sets.map(x=>editing===x.set?editorRow(x):`<div class="setrow"><span><b>Set ${x.set}</b> ${esc(fmtSet(x))}</span><button class="mini secondary" data-edit="${x.set}">Edit</button><button class="mini secondary" data-del="${x.set}" aria-label="Delete set ${x.set}">✕</button></div>`);
+ if(editing==="new")rows.push(editorRow({set:sets.length?Math.max(...sets.map(x=>x.set))+1:1}));
+ $("today").innerHTML=`<div class="todayhead">Today</div>${rows.join("")||'<div class="muted">No sets logged yet.</div>'}${editing==null?'<button class="mini secondary addset" data-add>+ Add set</button>':""}`;
+}
+// Apply a change to this session's entry for the current exercise, dropping it if it ends up empty
+function updateLog(fn){
+ const logs=loadLogs(),k=exerciseKey(),list=logs[k]||(logs[k]=[]);
+ let e=list.find(x=>x.session===session);
+ if(!e){e={day,date:today(),session,sets:[]};list.push(e)}
+ fn(e);e.sets.sort((a,b)=>a.set-b.set);
+ if(!e.sets.length)list.splice(list.indexOf(e),1);
+ if(!list.length)delete logs[k];
+ saveLogs(logs);showHistory();
+}
+function putSet(e,rec){const n=e.sets.findIndex(x=>x.set===rec.set);if(n<0)e.sets.push(rec);else e.sets[n]=rec}
+function readFields(rec,get){for(const f of ["weight","reps","weight2","reps2","rpe"]){const v=get(f);if(has(v))rec[f]=v;else delete rec[f]}return rec}
 // Pre-fill from the same set last session, else the last set logged today
 function prefill(){
  const p=prevEntry(),c=curEntry();
- const s=p&&p.sets.find(x=>x.set===set)||c&&c.sets[c.sets.length-1]||p&&p.sets[p.sets.length-1];
- const v=x=>x&&x!=="—"?x:"";
- $("weight").value=v(s&&s.weight);$("reps").value=v(s&&s.reps);
+ const s=p&&p.sets.find(x=>x.set===set)||c&&c.sets[c.sets.length-1]||p&&p.sets[p.sets.length-1]||{};
+ for(const f of ["weight","reps","weight2","reps2"])$(f).value=has(s[f])?s[f]:"";
+ $("rpe").value="";
 }
 function render(){
- $("list").innerHTML=items.map((x,n)=>`<div class="row ${n===i?'current':''}">
- <b>${n+1}</b><div>${x[0]}<div class="muted">${x[1]} sets · ${x[2]}</div></div>
- <span class="muted">${x[3]?fmt(x[3])+" rest":"timed"}</span></div>`).join("");
+ $("list").innerHTML=items.map((x,n)=>{
+  const d=progress[x[0]]||0,fin=d>=x[1];
+  const right=skipped[x[0]]?"skipped":fin?"✓ done":d?`${d}/${x[1]} sets`:x[3]?fmt(x[3])+" rest":"timed";
+  return `<div class="row ${n===i?'current':''} ${fin?'done':''} ${active()&&!fin&&n!==i?'tap':''}" data-n="${n}">
+ <b>${n+1}</b><div>${esc(x[0])}<div class="muted">${x[1]} sets · ${esc(x[2])}</div></div>
+ <span class="muted">${right}</span></div>`}).join("");
+ $("later").disabled=$("skipEx").disabled=!active();
  showHistory();
 }
 function stats(){$("set").textContent=`${set}/${items[i][1]}`;$("exno").textContent=`${i+1}/${items.length}`}
-function saveSession(){store.set(SKEY,{day,i,set,state,paused,endAt,remainingMs,startAt,pausedMs,pausedAt,session,saved:Date.now()})}
+function saveSession(){store.set(SKEY,{day,i,set,state,paused,endAt,remainingMs,startAt,pausedMs,pausedAt,session,progress,skipped,saved:Date.now()})}
 function unpause(){if(paused){pausedMs+=Date.now()-pausedAt;paused=false}$("pause").textContent="Ⅱ Pause"}
+// In rest/countdown endAt is when the timer ends; in work it is when the set started
 function remainingSec(){return Math.ceil((paused?remainingMs:endAt-Date.now())/1000)}
+function workSec(){return Math.max(0,Math.floor((paused?remainingMs:Date.now()-endAt)/1000))}
+function nextIncomplete(from){for(let k=1;k<=items.length;k++){const j=(from+k)%items.length;if(!done(j))return j}return -1}
 
 function reset(){
- day=$("day").value;items=W[day];i=0;set=1;state="ready";paused=false;session=0;lastShown=null;
+ day=$("day").value;items=W[day];i=0;set=1;state="ready";paused=false;session=0;lastShown=null;progress={};skipped={};editing=null;
  store.del(SKEY);release();stopRestAudio();
  $("phase").textContent="READY";$("time").textContent="00:00";$("exercise").textContent="Ready to train";
  $("info").textContent="Tap Start. You'll get a 3-second countdown before each set.";
  $("countdown").textContent="";$("set").textContent="—";$("exno").textContent="—";$("elapsed").textContent="00:00";
- $("action").disabled=true;$("action").textContent="START SET";$("pause").textContent="Ⅱ Pause";$("weight").value="";$("reps").value="";
- $("start").disabled=false;render();
+ $("action").disabled=true;$("action").textContent="START SET";$("pause").textContent="Ⅱ Pause";
+ $("start").disabled=false;configureFields();prefill();$("weight").value=$("reps").value=$("weight2").value=$("reps2").value="";render();
 }
 function prepareSet(){
- unpause();state="countdown";endAt=Date.now()+3000;lastShown=3;
+ unpause();state="countdown";endAt=Date.now()+3000;lastShown=3;editing=null;
  $("phase").textContent="GET READY";$("time").textContent="00:03";$("exercise").textContent=items[i][0];
  $("info").textContent=`Set ${set} of ${items[i][1]} · Target: ${target()}`;
- $("countdown").textContent="Get into position…";$("action").disabled=true;prefill();render();if(!restAudio)beep(500);saveSession();
+ $("countdown").textContent="Get into position…";$("action").disabled=true;configureFields();prefill();stats();render();if(!restAudio)beep(500);saveSession();
 }
 function countdownSecond(s){
  if(s>0){$("time").textContent="00:0"+s;$("countdown").textContent=s===1?"GO NEXT!":"Get ready…";beep(s===1?900:600,.1);vibrate(s===1?[150]:[50])}
@@ -189,31 +272,30 @@ function countdownSecond(s){
 }
 function startWorkout(){
  if(active())return;
- i=0;set=1;session=startAt=Date.now();pausedMs=0;paused=false;
+ i=0;set=1;session=startAt=Date.now();pausedMs=0;paused=false;progress={};skipped={};
  $("start").disabled=true;wake();prepareSet();
 }
-function startSet(){
- unpause();state="work";$("phase").textContent="WORK";$("time").textContent="GO";$("countdown").textContent="";
+// keep=true when restoring a set already in progress after a reload
+function startSet(keep){
+ if(!keep){unpause();endAt=Date.now()}
+ state="work";lastShown=null;$("phase").textContent="WORK";$("time").textContent=fmt(workSec());$("countdown").textContent="";
  $("exercise").textContent=items[i][0];$("info").textContent=`Set ${set} of ${items[i][1]} · Target: ${target()}`;stats();
- $("action").disabled=false;$("action").textContent="✓ SET COMPLETE — START REST";render();beep(1000,.2);vibrate([200]);saveSession();
+ $("action").disabled=false;$("action").textContent="✓ SET COMPLETE — START REST";render();if(!keep){beep(1000,.2);vibrate([200])}saveSession();
 }
-function saveCurrentSet(){
- const w=$("weight").value.trim(),r=$("reps").value.trim();
- if(!w&&!r)return;
- const logs=loadLogs(),k=exerciseKey();if(!logs[k])logs[k]=[];
- let entry=logs[k].find(e=>e.session===session);
- if(!entry){entry={day,date:today(),session,sets:[]};logs[k].push(entry)}
- const rec={set,weight:w||"—",reps:r||"—"},n=entry.sets.findIndex(x=>x.set===set);
- if(n<0)entry.sets.push(rec);else entry.sets[n]=rec;
- saveLogs(logs);
+// Every completed set is saved, even with blank fields, so it can be filled in later with Edit
+function saveCurrentSet(secs){
+ const rec=readFields({set,time:secs},f=>$(f).value.trim());
+ updateLog(e=>putSet(e,rec));
 }
 function showRest(){
+ const d=progress[items[i][0]]||0,n=nextIncomplete(i);
  $("phase").textContent="REST";$("time").textContent=fmt(remainingSec());$("exercise").textContent=items[i][0];$("countdown").textContent="";
- $("info").textContent=set<items[i][1]?`Rest now. Next is Set ${set+1}.`:i<items.length-1?`Rest now. Next: ${items[i+1][0]}`:"Rest now. Then you're done.";
+ $("info").textContent=d<items[i][1]?`Rest now. Next is Set ${d+1}.`:n<0?"Rest now. Then you're done.":`Rest now. Next: ${items[n][0]}`;
  $("action").disabled=true;$("action").textContent="RESTING…";
 }
 function completeSet(){
- if(state!=="work")return;saveCurrentSet();state="rest";
+ if(state!=="work")return;const secs=workSec();unpause();saveCurrentSet(secs);
+ progress[items[i][0]]=Math.max(progress[items[i][0]]||0,set);state="rest";
  const rest=items[i][3]||60;endAt=Date.now()+rest*1000;lastShown=rest;
  showRest();render();vibrate([100,80,100]);saveSession();startRestAudio();
 }
@@ -221,18 +303,27 @@ function restSecond(s){
  if(s>0){$("time").textContent=fmt(s);if(s<=3){if(!restAudio)beep(s===1?1000:750,.1);vibrate([60])}}
  else nextStep();
 }
+function jump(n){stopRestAudio();i=n;set=(progress[items[n][0]]||0)+1;prepareSet()}
 function nextStep(){
- if(set<items[i][1]){set++;prepareSet()}
- else if(i<items.length-1){i++;set=1;prepareSet()}
- else{
-  unpause();stopRestAudio();state="done";store.del(SKEY);release();$("start").disabled=false;
-  $("phase").textContent="COMPLETE 🎉";$("time").textContent="00:00";$("exercise").textContent="Workout complete";$("info").textContent="Great work. Cool down, hydrate and recover.";$("countdown").textContent="";$("set").textContent="✓";$("action").disabled=true;$("action").textContent="WORKOUT COMPLETE";beep(1200,.25);vibrate([150,80,150,80,300]);render();
- }
+ if(!done(i)){set=(progress[items[i][0]]||0)+1;prepareSet();return}
+ const n=nextIncomplete(i);
+ if(n>=0){jump(n);return}
+ unpause();stopRestAudio();state="done";store.del(SKEY);release();$("start").disabled=false;
+ $("phase").textContent="COMPLETE 🎉";$("time").textContent="00:00";$("exercise").textContent="Workout complete";$("info").textContent="Great work. Cool down, hydrate and recover.";$("countdown").textContent="";$("set").textContent="✓";$("action").disabled=true;$("action").textContent="WORKOUT COMPLETE";beep(1200,.25);vibrate([150,80,150,80,300]);render();
+}
+function doLater(){
+ if(!active())return;const n=nextIncomplete(i);
+ if(n<0||n===i){alert("Nothing else is left — this is the last exercise.");return}
+ jump(n);
+}
+function skipExercise(){
+ if(!active()||!confirm(`Skip ${items[i][0]} for today?`))return;
+ stopRestAudio();skipped[items[i][0]]=true;progress[items[i][0]]=items[i][1];nextStep();
 }
 function togglePause(){
- if(!active())return;const now=Date.now();
- if(paused){pausedMs+=now-pausedAt;paused=false;endAt=now+remainingMs}
- else{paused=true;pausedAt=now;remainingMs=endAt-now}
+ if(!active())return;const now=Date.now(),work=state==="work";
+ if(paused){pausedMs+=now-pausedAt;paused=false;endAt=work?now-remainingMs:now+remainingMs}
+ else{paused=true;pausedAt=now;remainingMs=work?now-endAt:endAt-now}
  $("pause").textContent=paused?"▶ Resume":"Ⅱ Pause";saveSession();
  paused?stopRestAudio():startRestAudio();
 }
@@ -240,30 +331,40 @@ function togglePause(){
 function tick(){
  if(!active())return;
  $("elapsed").textContent=fmt(((paused?pausedAt:Date.now())-startAt-pausedMs)/1000);
- if(paused||(state!=="countdown"&&state!=="rest"))return;
+ if(paused)return;
+ if(state==="work"){
+  const s=workSec();if(s===lastShown)return;lastShown=s;$("time").textContent=fmt(s);
+  const tt=timedTarget();
+  if(tt&&s>0&&(s===tt[0]||s===tt[1])){beep(1000,.3);vibrate([200,100,200]);$("countdown").textContent=s===tt[1]?"Max time — finish up":"Target time reached"}
+  return;
+ }
  const s=remainingSec();if(s===lastShown)return;lastShown=s;
  state==="countdown"?countdownSecond(s):restSecond(s);
 }
 function restore(s){
  if(!s||!W[s.day]||!W[s.day][s.i]||!["countdown","work","rest"].includes(s.state)||Date.now()-s.saved>3*3600e3)return;
  ({i,set,state,paused,endAt,remainingMs,startAt,pausedMs,pausedAt,session}=s);
- day=s.day;$("day").value=day;items=W[day];$("start").disabled=true;stats();
- if(state==="rest"){lastShown=null;$("pause").textContent=paused?"▶ Resume":"Ⅱ Pause";showRest();prefill();render();saveSession()}
- else if(state==="work"){prefill();startSet()}
+ day=s.day;$("day").value=day;items=W[day];$("start").disabled=true;
+ skipped=s.skipped||{};progress=s.progress;
+ if(!progress){progress={};items.forEach((x,n)=>{if(n<i)progress[x[0]]=x[1]});progress[items[i][0]]=set-(state==="rest"?0:1)}
+ configureFields();prefill();stats();
+ if(state==="rest"){lastShown=null;showRest();render();saveSession()}
+ else if(state==="work")startSet(true);
  else prepareSet();
+ $("pause").textContent=paused?"▶ Resume":"Ⅱ Pause";
  wake();tick();
 }
 const workoutCount=logs=>new Set(Object.values(logs).flat().map(e=>e.session||e.day+e.date)).size;
 const backupMsg=m=>{$("backupMsg").textContent=m};
 async function exportLogs(){
  const logs=loadLogs(),name=`gym-log-${today()}.json`;
- const file=new File([JSON.stringify({app:"gym-timer",version:1,exported:new Date().toISOString(),logs},null,1)],name,{type:"application/json"});
- const done=`Exported ${workoutCount(logs)} workouts.`;
+ const file=new File([JSON.stringify({app:"gym-timer",version:1,exported:new Date().toISOString(),logs,notes:loadNotes()},null,1)],name,{type:"application/json"});
+ const msg=`Exported ${workoutCount(logs)} workouts.`;
  if(navigator.canShare&&navigator.canShare({files:[file]})){
-  try{await navigator.share({files:[file],title:"Gym log"});backupMsg(done);return}catch(e){if(e.name==="AbortError")return}
+  try{await navigator.share({files:[file],title:"Gym log"});backupMsg(msg);return}catch(e){if(e.name==="AbortError")return}
  }
  const a=document.createElement("a");a.href=URL.createObjectURL(file);a.download=name;document.body.appendChild(a);a.click();a.remove();
- setTimeout(()=>URL.revokeObjectURL(a.href),1000);backupMsg(done);
+ setTimeout(()=>URL.revokeObjectURL(a.href),1000);backupMsg(msg);
 }
 // Merge, never overwrite: add entries that aren't already here, then keep each list in date order
 function mergeLogs(incoming){
@@ -278,12 +379,17 @@ function mergeLogs(incoming){
  }
  saveLogs(logs);return added;
 }
+function mergeNotes(incoming){
+ const notes=loadNotes();let added=0;
+ for(const[k,v]of Object.entries(incoming||{}))if(typeof v==="string"&&!notes[k]){notes[k]=v;added++}
+ store.set(NKEY,notes);return added;
+}
 async function importLogs(file){
  try{
   const data=JSON.parse(await file.text());
   if(data?.app!=="gym-timer"||typeof data.logs!=="object"||!data.logs)throw new Error();
-  const added=mergeLogs(data.logs);render();
-  backupMsg(added?`Imported ${added} exercise logs (${workoutCount(data.logs)} workouts in the file).`:"Nothing new to import — everything in that file is already here.");
+  const added=mergeLogs(data.logs),notes=mergeNotes(data.notes);configureFields();render();
+  backupMsg(added||notes?`Imported ${added} exercise logs${notes?` and ${notes} notes`:""} (${workoutCount(data.logs)} workouts in the file).`:"Nothing new to import — everything in that file is already here.");
  }catch(e){backupMsg("That file isn't a Gym Timer backup.")}
 }
 const confirmEnd=()=>!active()||confirm("End this workout? Your logged sets are kept.");
@@ -292,6 +398,25 @@ $("day").addEventListener("change",()=>{if(confirmEnd())reset();else $("day").va
 $("start").addEventListener("click",startWorkout);$("reset").addEventListener("click",()=>{if(confirmEnd())reset()});
 $("action").addEventListener("click",completeSet);$("pause").addEventListener("click",togglePause);
 $("skip").addEventListener("click",()=>{if(state==="rest"){stopRestAudio();nextStep()}});
+$("later").addEventListener("click",doLater);$("skipEx").addEventListener("click",skipExercise);
+$("list").addEventListener("click",e=>{
+ const r=e.target.closest(".row");if(!r||!active())return;const n=+r.dataset.n;
+ if(n===i||done(n))return;
+ if(state==="work"&&!confirm(`Switch to ${items[n][0]}? This set isn't logged yet.`))return;
+ jump(n);
+});
+$("today").addEventListener("click",e=>{
+ const b=e.target.closest("button");if(!b)return;const d=b.dataset;
+ if(d.edit){editing=+d.edit;renderToday()}
+ else if(d.del){if(confirm(`Delete set ${d.del}?`))updateLog(x=>{x.sets=x.sets.filter(s=>s.set!==+d.del)})}
+ else if("add" in d){editing="new";renderToday()}
+ else if("cancel" in d){editing=null;renderToday()}
+ else if("save" in d){
+  const row=b.closest(".editor"),n=+row.dataset.set,get=f=>{const el=row.querySelector({weight:".ew",reps:".er",weight2:".ew2",reps2:".er2",rpe:".erpe"}[f]);return el?el.value.trim():""};
+  editing=null;updateLog(x=>putSet(x,readFields({...(x.sets.find(s=>s.set===n)||{set:n})},get)));
+ }
+});
+$("note").addEventListener("input",()=>{const n=loadNotes(),k=exerciseKey(),v=$("note").value.trim();if(v)n[k]=v;else delete n[k];store.set(NKEY,n)});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&active()){wake();tick()}});
 document.addEventListener("click",()=>{if(active()){wake();audio()}});
 $("lockAlert").checked=prefs.lockAlert;
