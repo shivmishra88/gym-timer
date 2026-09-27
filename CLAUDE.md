@@ -12,9 +12,10 @@ Live at https://shivmishra88.github.io/gym-timer/ (GitHub Pages, `main` branch r
 
 ## How the script is organised
 
-- `DEFAULT_DAYS` is the built-in plan; the live plan is `plan = {titles, days}` loaded from storage, with `W = plan.days` (`W[day] = [[name, sets, target, restSeconds, opts], ...]`, days `mon`–`sun`, and a missing day is a rest day). `opts` is `{hand}` (per-hand dumbbell weights, ×2 for volume); `normPlan` fills missing opts from `DEFAULT_OPTS`, and the editor always saves an opts object so a user's unticked option isn't refilled. The routine editor (`openEditor`/`saveEditor`) edits a draft and then calls `applyPlan`; renaming an exercise moves its logs and notes (`migrateRenames`). The editor is disabled mid-workout. `" + "` in a name = superset; a target like `"45–60 sec"` / `"30–45 min"` = timed exercise.
+- `DEFAULT_DAYS` is the built-in plan; the live plan is `plan = {titles, days}` loaded from storage, with `W = plan.days` (`W[day] = [[name, sets, target, restSeconds, opts], ...]`, days `mon`–`sun`, and a missing day is a rest day). `opts` is `{hand, m, m2}`: per-hand dumbbell weights (×2 for volume), and the muscle (m2 = second half of a superset; keys in `MUSCLES`). `normPlan` fills only the *missing keys* from `DEFAULT_OPTS`, and the editor saves every key explicitly (`hand:false`, `m:""`), so a user's choice is never overwritten. In the editor, rows carry `orig`/`origDay`, so renames and "Move to…" another day carry logs and notes (`migrateRenames`). The routine editor (`openEditor`/`saveEditor`) edits a draft and then calls `applyPlan`; renaming an exercise moves its logs and notes (`migrateRenames`). The editor is disabled mid-workout. `" + "` in a name = superset; a target like `"45–60 sec"` / `"30–45 min"` = timed exercise.
 - State machine: `ready → countdown → work → rest → … → done`. One `tick()` every 250 ms computes everything from the wall clock (`endAt`), so timers survive the phone locking. In `work`, `endAt` is when the set *started*; in `countdown`/`rest` it's when the timer ends.
-- `progress[name]` = sets completed this session; `skipped[name]`; `nextIncomplete()` drives Do later / Skip / tap-to-jump and wrap-around.
+- `progress[name]` = sets completed this session; `skipped[name]`; `nextIncomplete()` drives Later / Skip / tap-to-jump and wrap-around.
+- `items` is a copy of `W[day]` with this session's swaps applied (`applySwaps`; `swaps[plan name] = alternative`, saved with the session). A swapped exercise logs under its own name, with `swapFor` on the entry so muscle counts still work (`musclesOf`). Recent alternatives are stored in `gymTrackerAltsV1`.
 - The session is saved to `localStorage` on every transition and restored on load (discarded after 3 h).
 - The lock-screen alert (`startAlert`/`stopAlert`) plays a generated WAV (`wav(len, tones)`) that is silent until its beeps: the 3-2-1 at the end of rest, and the min/max target during timed work (cardio over 10 min gets only the min target, and long clips use 4 kHz to stay small). iOS keeps audio playing while it suspends JS. One `Audio` element is reused and unlocked on the first tap (`unlockAlert`), because iOS won't start audio from a timer otherwise. It's opt-in because it pauses the user's music.
 
@@ -26,6 +27,7 @@ Live at https://shivmishra88.github.io/gym-timer/ (GitHub Pages, `main` branch r
 | `gymTrackerSessionV1` | in-progress workout state (see `saveSession`) |
 | `gymTrackerNotesV1` | `{ "day::Exercise": "note" }` |
 | `gymTrackerPrefsV1` | `{ lockAlert, inc, lastExport, bw }` (inc = weight increment for suggestions; lastExport = ms of last backup; bw = body weight kg) |
+| `gymTrackerAltsV1` | `{ "day::Exercise": [recent alternatives] }` for Swap |
 | `gymTrackerSummaryV1` | `{ date, html }`, the last workout summary, re-shown on reload the same day until dismissed |
 | `gymTrackerPlanV1` | `{ titles:{day:title}, days:{day:[[name, sets, target, restSeconds]]} }` — validated by `validPlan` |
 
@@ -43,7 +45,7 @@ Progression suggestions (`suggest`/`repTop`) work per set from the same set last
 ```bash
 tests/run.sh      # installs playwright-core once, serves the repo on :8765, runs every tests/*.test.js
 ```
-It needs Google Chrome installed (`channel: 'chrome'`). The tests use Playwright's fake clock, so allow ~300 ms of slack when checking displayed times (the ticker runs every 250 ms). 173 checks across 7 files, all passing. Nothing has been verified on a real iPhone yet (see "Needs checking on device").
+It needs Google Chrome installed (`channel: 'chrome'`). The tests use Playwright's fake clock, so allow ~300 ms of slack when checking displayed times (the ticker runs every 250 ms). 197 checks across 8 files, all passing. Nothing has been verified on a real iPhone yet (see "Needs checking on device").
 
 ## Pushing
 
@@ -66,7 +68,7 @@ Came from a PM + lifter review of v3 (the version originally built in ChatGPT).
 The five-step roadmap from the original review is complete. The owner then asked for the pending features, done in batches (cloud sync and lb units deliberately left out: sync needs a backend decision, and all data is in kg):
 - [x] **Batch A — quick wins**: rest ±30 s, lock-screen alert for timed work, backup reminder (summary + "Last backup" in Settings), summary persists after reload (dismissable), countdown copy "Ready… / Set… / Go!", log panel collapses when done, timed/bodyweight suggestions, deload hint.
 - [x] **Batch B — logging**: warm-up sets (toggle; logged in `warm`, rest capped at 60 s, set count unchanged), bodyweight/assisted weights (kg / BW + / BW − selector, since the iPhone decimal keypad has no letters or minus; body weight in Settings), per-hand dumbbell weights (editor checkbox, "/hand" labels, ×2 volume).
-- [ ] **Batch C — program**: swap exercise for an alternative, move exercises between days in the editor, muscle tags + weekly sets per muscle.
+- [x] **Batch C — program**: ⇄ Swap for this workout (progress carries, swap back, recent alternatives), "Move to…" another day in the editor (history moves too), muscle per exercise (+ 2nd for supersets) with defaults, and a "Working sets per muscle this week" bar chart in Progress (cardio excluded, planned muscles shown at 0).
 - [ ] **Batch D — dark mode.**
 
 ## Pending items (everything not yet done)
@@ -80,9 +82,6 @@ The five-step roadmap from the original review is complete. The owner then asked
 - Data inconsistencies: Leg Curl is 4 sets but the target is "15, 10"; Bench Dips target is "controlled".
 
 **Features**
-- Move an exercise between days in the editor (currently remove + add, which doesn't carry history over).
-- Swap an exercise for an alternative (e.g. machine taken → dumbbell version).
-- Weekly volume per muscle group (needs a muscle tag per exercise).
 - Optional cloud sync (would need a backend or a GitHub-gist/Drive approach) — not started; owner to decide.
 - lb units — not started; all stored weights are kg, so this needs a unit per set or a display-only conversion.
 - Dark mode.

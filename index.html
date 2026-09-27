@@ -31,7 +31,7 @@ select,input{background:white;color:#111827}select{flex:1}button{font-weight:750
 .settings{margin-top:12px}.toggle{display:flex;gap:10px;align-items:flex-start;text-align:left;font-size:15px}.toggle input{min-height:0;width:22px;height:22px;margin:1px 0 0;padding:0;flex:none}
 .backup{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
 [hidden]{display:none!important}
-.exctl{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:-4px 0 12px}button:disabled{opacity:.45}
+.exctl{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:-4px 0 12px}button:disabled{opacity:.45}
 .partname{font-size:13px;font-weight:750;margin:10px 0 6px}.partname:first-of-type{margin-top:0}.extra{margin-top:10px}.extra select{width:100%}
 .auto{min-height:48px;display:flex;align-items:center;color:#6b7280;font-size:14px}
 .today{margin-top:10px}.todayhead{font-size:12px;font-weight:800;letter-spacing:.06em;color:#6b7280;margin-bottom:6px;text-transform:uppercase}
@@ -60,6 +60,10 @@ select,input{background:white;color:#111827}select{flex:1}button{font-weight:750
 .wrow{display:flex;gap:6px}.wrow select{flex:none;width:78px;padding:10px 6px}.wrow input{flex:1;min-width:0}
 .warmbox{margin-top:10px}.warmset span b{color:#6b7280}.edcheck{display:flex;gap:8px;align-items:center;font-size:13px;color:#374151;margin-top:8px}.edcheck input{min-height:0;width:18px;height:18px;padding:0;margin:0}
 .incrow input{flex:none;width:96px}
+.edgrid2{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}.edgrid2 label{font-size:12px;color:#6b7280}.edgrid2 select{width:100%;margin-top:3px;min-height:40px;padding:6px 8px}
+.edmove{min-height:36px;padding:4px 8px;font-size:14px;border-radius:10px;max-width:120px}
+.muscles{margin:4px 0 14px}.mnote{margin:2px 0 8px}.mrow{display:grid;grid-template-columns:84px 1fr 28px;align-items:center;gap:8px;height:24px;font-size:13px}
+.mtrack{height:12px;position:relative}.mbar{position:absolute;left:0;top:0;bottom:0;background:#2a78d6;border-radius:0 4px 4px 0;min-width:2px}.mval{text-align:right;font-variant-numeric:tabular-nums;color:#111827;font-weight:700}
 .restadj{display:flex;gap:8px;justify-content:center;margin:0 0 12px}.restadj .mini{min-width:72px}
 .summary{position:relative}.sumclose{position:absolute;top:12px;right:12px;min-height:32px;padding:4px 10px}
 .remind{margin-top:10px;padding:10px;background:#eff6ff;border-radius:12px;font-size:14px;display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -122,8 +126,9 @@ select,input{background:white;color:#111827}select{flex:1}button{font-weight:750
 <button id="reset" class="secondary">↻ Reset</button>
 </div>
 <div class="exctl">
-<button id="later" class="secondary">↷ Do later</button>
-<button id="skipEx" class="secondary">✕ Skip exercise</button>
+<button id="later" class="secondary">↷ Later</button>
+<button id="swapEx" class="secondary">⇄ Swap</button>
+<button id="skipEx" class="secondary">✕ Skip</button>
 </div>
 
 <div id="list" class="list"></div>
@@ -136,6 +141,7 @@ select,input{background:white;color:#111827}select{flex:1}button{font-weight:750
 <div class="stat"><small>WORKOUTS</small><b id="pTotal">0</b></div>
 </div>
 <div id="cal" class="cal" aria-label="Last 5 weeks"></div>
+<div id="muscles" class="muscles"></div>
 <label for="pEx" class="plabel">Exercise</label><select id="pEx"></select>
 <div id="chart" class="chart"></div>
 <div id="pSessions"></div>
@@ -179,7 +185,7 @@ sat:[["T-Bar Row",4,"12, 10, 8, 8",150],["Underhand Lat Pull Down",3,"12, 10, 8"
 const KEY="gymTrackerLogsV1",SKEY="gymTrackerSessionV1",NKEY="gymTrackerNotesV1";
 let day="mon",items=[],i=0,set=1,state="ready",paused=false,endAt=0,remainingMs=0,startAt=0,pausedMs=0,pausedAt=0,session=0,lastShown=null,wakeLock=null;
 // progress: sets completed per exercise this session; skipped: exercises skipped for today; editing: set number being edited, or "new"
-let progress={},skipped={},editing=null;
+let progress={},skipped={},editing=null,swaps={};
 
 const $=id=>document.getElementById(id);
 const fmt=s=>{s=Math.max(0,Math.round(s));return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0")};
@@ -197,10 +203,20 @@ const DEFAULT_TITLES={mon:"Push 1",tue:"Legs",wed:"Pull 1",thu:"Cardio + Abs",fr
 function validPlan(p){
  return !!p&&typeof p.days==="object"&&Object.entries(p.days).every(([d,l])=>DAY_IDS.includes(d)&&Array.isArray(l)&&l.every(x=>Array.isArray(x)&&typeof x[0]==="string"&&x[0]&&!x[0].includes("::")&&Number.isInteger(x[1])&&x[1]>0&&typeof x[2]==="string"&&Number.isInteger(x[3])&&x[3]>=0&&(x[4]===undefined||!!x[4]&&typeof x[4]==="object"&&!Array.isArray(x[4]))))&&Object.values(p.days).some(l=>l.length);
 }
-const DEFAULT_OPTS={"mon::Incline Dumbbell Press + Incline Fly":{hand:true},"mon::Side Laterals":{hand:true},"tue::Dumbbell Squats":{hand:true},"wed::Alternate Dumbbell Curl":{hand:true},"fri::Seated Dumbbell Press":{hand:true},"sat::Hammer Curl":{hand:true}};
+const MUSCLES={chest:"Chest",back:"Back",shoulders:"Shoulders",biceps:"Biceps",triceps:"Triceps",quads:"Quads",hamstrings:"Hamstrings",glutes:"Glutes",calves:"Calves",abs:"Abs",traps:"Traps",cardio:"Cardio"};
+// Default per-exercise opts: m/m2 = muscle (m2 = second half of a superset), hand = per-hand dumbbell weights
+const DEFAULT_OPTS=(()=>{const o={},add=(d,m,list)=>list.forEach(n=>{const[name,hand,m2]=Array.isArray(n)?n:[n];o[d+"::"+name]={m,...(m2?{m2}:{}),...(hand?{hand:true}:{})}});
+ add("mon","chest",["Decline Bench Press",["Incline Dumbbell Press + Incline Fly",1,"chest"]]);add("mon","shoulders",["Back Press",["Side Laterals",1]]);add("mon","triceps",["Bench Dips","V-Rod Push Down"]);
+ add("tue","quads",["Free-hand Squats","Leg Extension","Leg Press",["Dumbbell Squats",1]]);add("tue","glutes",["Lunges"]);add("tue","hamstrings",["Leg Curl"]);add("tue","calves",["Calves"]);
+ add("wed","back",["Front Lat Pull Down","Seated Row","Close Grip Lat Pull Down"]);add("wed","shoulders",["Reverse Pec Fly"]);add("wed","biceps",[["Alternate Dumbbell Curl",1],"Preacher Curl"]);
+ add("thu","cardio",["Cardio"]);add("thu","abs",["Crunches","Leg Raises","Plank","Russian Twist","Hanging Knee Raise","Cable Crunch"]);
+ add("fri","chest",["Flat Bench Press",["Bar Dips + Pec Fly",0,"chest"]]);add("fri","shoulders",[["Seated Dumbbell Press",1]]);add("fri","traps",["Bar Shrugs"]);add("fri","triceps",["Overhead Extension","Straight Rod Push Down"]);
+ add("sat","back",["T-Bar Row","Underhand Lat Pull Down","Deadlift"]);add("sat","traps",["Shrugs"]);add("sat","biceps",["Barbell Curl",["Hammer Curl",1]]);
+ return o})();
 const defaultPlan=()=>JSON.parse(JSON.stringify({titles:DEFAULT_TITLES,days:DEFAULT_DAYS}));
-// Exercises without opts (older saved plans, the default plan) get the default opts for that name
-function normPlan(p){const days={};for(const d of DAY_IDS)if(p.days[d]&&p.days[d].length)days[d]=p.days[d].map(x=>x.length>4?x:[...x.slice(0,4),{...(DEFAULT_OPTS[d+"::"+x[0]]||{})}]);return{titles:{...(p.titles||{})},days}}
+// Opts keys an exercise doesn't have yet (older saved plans, the default plan) come from the defaults for that name;
+// the editor saves every key explicitly (hand:false, m:""), so a user's choice is never overwritten
+function normPlan(p){const days={};for(const d of DAY_IDS)if(p.days[d]&&p.days[d].length)days[d]=p.days[d].map(x=>[...x.slice(0,4),{...(DEFAULT_OPTS[d+"::"+x[0]]||{}),...(x[4]||{})}]);return{titles:{...(p.titles||{})},days}}
 let plan=normPlan((()=>{const s=store.get(PLKEY,null);return validPlan(s)?s:defaultPlan()})()),W=plan.days;
 const plannedDays=()=>DAY_IDS.filter(d=>W[d]);
 const dayId=d=>DAY_IDS[(d.getDay()+6)%7];
@@ -339,7 +355,7 @@ function renderToday(){
 function updateEntry(key,idx,fn){
  const logs=loadLogs(),list=logs[key]||(logs[key]=[]);
  let e=idx==="cur"?list.find(x=>x.session===session):list[idx];
- if(!e&&idx==="cur"){e={day:key.split("::")[0],date:today(),session,sets:[]};list.push(e)}
+ if(!e&&idx==="cur"){const sf=items[i][4]&&items[i][4].swapFor;e={day:key.split("::")[0],date:today(),session,...(sf?{swapFor:sf}:{}),sets:[]};list.push(e)}
  if(!e)return;
  fn(e);e.sets.sort((a,b)=>a.set-b.set);
  if(!e.sets.length&&!(e.warm&&e.warm.length))list.splice(list.indexOf(e),1);
@@ -407,9 +423,9 @@ function render(){
   const d=progress[x[0]]||0,fin=d>=x[1];
   const right=skipped[x[0]]?"skipped":fin?"✓ done":d?`${d}/${x[1]} sets`:x[3]?fmt(x[3])+" rest":"timed";
   return `<div class="row ${n===i?'current':''} ${fin?'done':''} ${active()&&!fin&&n!==i?'tap':''}" data-n="${n}">
- <b>${n+1}</b><div>${esc(x[0])}<div class="muted">${x[1]} sets · ${esc(x[2])}</div></div>
+ <b>${n+1}</b><div>${esc(x[0])}<div class="muted">${x[4]&&x[4].swapFor?`⇄ for ${esc(x[4].swapFor)} · `:""}${x[1]} sets · ${esc(x[2])}</div></div>
  <span class="muted">${right}</span></div>`}).join("");
- $("later").disabled=$("skipEx").disabled=!active();$("editPlan").disabled=active()||!!draft;
+ $("later").disabled=$("skipEx").disabled=$("swapEx").disabled=!active();$("editPlan").disabled=active()||!!draft;
  showHistory();renderProgress();
 }
 
@@ -445,6 +461,24 @@ function chartSVG(pts,m){
  <g class="hits">${pts.map((p,k)=>`<rect data-k="${k}" x="${X(k)-band/2}" y="0" width="${band}" height="${H}" fill="transparent"/>`).join("")}</g>
  </svg><div class="tip" hidden></div>`;
 }
+// Working sets this week (Mon–Sun) per muscle; a superset set counts once for each half's muscle.
+// Muscles come from the plan (or, for a swapped exercise, from the one it replaced). Cardio isn't counted.
+function musclesOf(key,e){const x=itemFor(key);if(x[4])return x[4];return e.swapFor?itemFor(key.split("::")[0]+"::"+e.swapFor)[4]||{}:{}}
+function renderMuscles(logs,mon){
+ const from=ymd(mon),to=ymd(addDays(mon,6)),count={},by={};
+ for(const d of plannedDays())for(const x of W[d])for(const m of [x[4]&&x[4].m,x[4]&&x[4].m2])if(m&&m!=="cardio")count[m]=0;
+ for(const[key,list]of Object.entries(logs))for(const e of list){
+  if(e.date<from||e.date>to||!e.sets.length)continue;
+  const o=musclesOf(key,e),ms=[o.m,parts(itemFor(key)).length>1?o.m2:null].filter(m=>m&&m!=="cardio");
+  for(const m of ms.length?ms:["other"]){count[m]=(count[m]||0)+e.sets.length;(by[m]||(by[m]={}))[key.split("::")[1]]=((by[m]||{})[key.split("::")[1]]||0)+e.sets.length}
+ }
+ const rows=Object.entries(count).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
+ if(!rows.length){$("muscles").innerHTML="";return}
+ const max=Math.max(20,...rows.map(r=>r[1]));
+ $("muscles").innerHTML=`<div class="ctitle">Working sets per muscle this week</div><div class="muted mnote">About 10–20 hard sets per muscle a week is a common target for growth.</div>`+rows.map(([m,n])=>{
+  const tip=`${MUSCLES[m]||"Other"}: ${n} set${n===1?"":"s"}`+(by[m]?" — "+Object.entries(by[m]).map(([e,c])=>`${e} ${c}`).join(", "):"");
+  return `<div class="mrow" title="${esc(tip)}"><span class="mname">${MUSCLES[m]||"Other"}</span><span class="mtrack"><span class="mbar" style="width:${n/max*100}%"></span></span><span class="mval">${n}</span></div>`}).join("");
+}
 function renderProgress(){
  const logs=loadLogs(),dates=new Set(Object.values(logs).flat().filter(e=>e.sets.length).map(e=>e.date));
  const now=new Date(),mon=addDays(now,-((now.getDay()+6)%7));
@@ -454,6 +488,7 @@ function renderProgress(){
  let cal=["M","T","W","T","F","S","S"].map(d=>`<div class="h">${d}</div>`).join("");
  for(let k=-28;k<7;k++){const d=addDays(mon,k),s=ymd(d);cal+=`<div class="${dates.has(s)?"on":""} ${s===ymd(now)?"now":""} ${d>now?"fut":""}" title="${s}${dates.has(s)?" · trained":""}">${d.getDate()}</div>`}
  $("cal").innerHTML=cal;
+ renderMuscles(logs,mon);
  // exercise picker: plan order first, then anything logged that is no longer in the plan
  const planKeys=plannedDays().flatMap(d=>W[d].map(x=>d+"::"+x[0])),keys=[...planKeys,...Object.keys(logs).filter(k=>!planKeys.includes(k))].filter(k=>logs[k]&&logs[k].length);
  if(!keys.length){$("pEx").hidden=true;$("chart").innerHTML='<div class="muted">Log a workout to see your progress here.</div>';$("pSessions").innerHTML="";return}
@@ -477,7 +512,10 @@ function chartTip(ev){
  tip.style.left=Math.min(Math.max(cx,70),box.width-70)+"px";tip.style.top=(cy-10)+"px";
 }
 function stats(){$("set").textContent=`${set}/${items[i][1]}`;$("exno").textContent=`${i+1}/${items.length}`}
-function saveSession(){store.set(SKEY,{day,i,set,state,paused,endAt,remainingMs,startAt,pausedMs,pausedAt,session,progress,skipped,saved:Date.now()})}
+function saveSession(){store.set(SKEY,{day,i,set,state,paused,endAt,remainingMs,startAt,pausedMs,pausedAt,session,progress,skipped,swaps,saved:Date.now()})}
+// Today's list: the plan with any swaps applied (swaps[plan name] = alternative). A swapped exercise keeps sets,
+// target, rest and muscles but not per-hand, and remembers what it replaced in opts.swapFor
+function applySwaps(){items=W[day].map(x=>{const alt=swaps[x[0]];if(!alt)return[...x];const o=x[4]||{};return[alt,x[1],x[2],x[3],{m:o.m,m2:o.m2,swapFor:x[0]}]})}
 function unpause(){if(paused){pausedMs+=Date.now()-pausedAt;paused=false}$("pause").textContent="Ⅱ Pause"}
 // In rest/countdown endAt is when the timer ends; in work it is when the set started
 function remainingSec(){return Math.ceil((paused?remainingMs:endAt-Date.now())/1000)}
@@ -485,7 +523,7 @@ function workSec(){return Math.max(0,Math.floor((paused?remainingMs:Date.now()-e
 function nextIncomplete(from){for(let k=1;k<=items.length;k++){const j=(from+k)%items.length;if(!done(j))return j}return -1}
 
 function reset(){
- day=$("day").value;items=W[day];i=0;set=1;state="ready";paused=false;session=0;lastShown=null;progress={};skipped={};editing=null;
+ day=$("day").value;swaps={};applySwaps();i=0;set=1;state="ready";paused=false;session=0;lastShown=null;progress={};skipped={};editing=null;
  store.del(SKEY);release();stopAlert();$("summary").hidden=true;$("logPanel").hidden=false;$("restAdj").hidden=true;
  $("phase").textContent="READY";$("time").textContent="00:00";$("exercise").textContent="Ready to train";
  $("info").textContent="Tap Start. You'll get a 3-second countdown before each set.";
@@ -584,6 +622,20 @@ function nextStep(){
  unpause();stopAlert();const dur=(Date.now()-startAt-pausedMs)/1000;state="done";store.del(SKEY);showSummary(dur);release();$("start").disabled=false;$("logPanel").hidden=true;$("restAdj").hidden=true;
  $("phase").textContent="COMPLETE 🎉";$("time").textContent="00:00";$("exercise").textContent="Workout complete";$("info").textContent="Great work. Cool down, hydrate and recover.";$("countdown").textContent="";$("set").textContent="✓";$("action").disabled=true;$("action").textContent="WORKOUT COMPLETE";beep(1200,.25);vibrate([150,80,150,80,300]);render();
 }
+const ALTKEY="gymTrackerAltsV1";
+function swapExercise(){
+ if(!active())return;
+ const cur=items[i][0],base=items[i][4]&&items[i][4].swapFor||cur,alts=store.get(ALTKEY,{}),recent=(alts[day+"::"+base]||[]).filter(a=>a!==cur);
+ const ans=prompt(`Swap ${cur} for… (e.g. the machine is taken)${base!==cur?`\nEnter "${base}" to swap back.`:""}${recent.length?`\nRecent: ${recent.join(", ")}`:""}`,recent[0]||"");
+ const name=(ans||"").trim();if(!name||name===cur)return;
+ if(name.includes("::")){alert('Names can\'t contain "::".');return}
+ if(items.some((x,n)=>n!==i&&x[0]===name)){alert(`${name} is already in today's workout.`);return}
+ if(name===base)delete swaps[base];else{swaps[base]=name;alts[day+"::"+base]=[name,...(alts[day+"::"+base]||[]).filter(a=>a!==name)].slice(0,5);store.set(ALTKEY,alts)}
+ // sets already done carry over to the replacement
+ if(progress[cur]!=null){progress[name]=progress[cur];delete progress[cur]}
+ if(skipped[cur]){skipped[name]=true;delete skipped[cur]}
+ stopAlert();applySwaps();set=(progress[name]||0)+1;prepareSet();
+}
 function doLater(){
  if(!active())return;const n=nextIncomplete(i);
  if(n<0||n===i){alert("Nothing else is left — this is the last exercise.");return}
@@ -617,7 +669,7 @@ function tick(){
 function restore(s){
  if(!s||!W[s.day]||!W[s.day][s.i]||!["countdown","work","rest"].includes(s.state)||Date.now()-s.saved>3*3600e3)return;
  ({i,set,state,paused,endAt,remainingMs,startAt,pausedMs,pausedAt,session}=s);
- day=s.day;$("day").value=day;items=W[day];$("start").disabled=true;
+ day=s.day;$("day").value=day;swaps=s.swaps||{};applySwaps();$("start").disabled=true;
  skipped=s.skipped||{};progress=s.progress;
  if(!progress){progress={};items.forEach((x,n)=>{if(n<i)progress[x[0]]=x[1]});progress[items[i][0]]=set-(state==="rest"?0:1)}
  configureFields();prefill();stats();
@@ -669,7 +721,8 @@ async function importLogs(file){
  }catch(e){backupMsg("That file isn't a Gym Timer backup.")}
 }
 let draft=null,draftDay="mon";
-const toRows=days=>Object.fromEntries(DAY_IDS.map(d=>[d,(days[d]||[]).map(x=>({name:x[0],sets:x[1],target:x[2],rest:x[3],opts:{...(x[4]||{})},orig:x[0]}))]));
+const toRows=days=>Object.fromEntries(DAY_IDS.map(d=>[d,(days[d]||[]).map(x=>({name:x[0],sets:x[1],target:x[2],rest:x[3],opts:{...(x[4]||{})},orig:x[0],origDay:d}))]));
+const muscleOpts=v=>`<option value="">—</option>`+Object.entries(MUSCLES).map(([k,n])=>`<option value="${k}" ${v===k?"selected":""}>${n}</option>`).join("");
 function openEditor(){
  if(active())return;
  draft={titles:{...plan.titles},days:toRows(plan.days)};draftDay=$("day").value||"mon";
@@ -685,13 +738,14 @@ function renderEditor(){
  <div class="edgrid"><label>Sets<input class="edsets" type="number" inputmode="numeric" min="1" max="20" value="${r.sets}"></label>
  <label>Target<input class="edtarget" value="${esc(r.target)}" placeholder="12, 10, 8"></label>
  <label>Rest (s)<input class="edrest" type="number" inputmode="numeric" min="0" max="900" value="${r.rest}"></label></div>
+ <div class="edgrid2"><label>Muscle<select class="edm">${muscleOpts(r.opts.m)}</select></label><label>2nd muscle (supersets)<select class="edm2">${muscleOpts(r.opts.m2)}</select></label></div>
  <label class="edcheck"><input type="checkbox" class="edhand" ${r.opts.hand?"checked":""}> Weights are per hand (dumbbells)</label>
- <div class="edbtns"><button class="mini secondary" data-up ${k?"":"disabled"} aria-label="Move up">↑</button><button class="mini secondary" data-down ${k<rows.length-1?"":"disabled"} aria-label="Move down">↓</button><button class="mini secondary" data-rm>✕ Remove</button></div></div>`).join("")||'<div class="muted">Rest day — no exercises.</div>';
+ <div class="edbtns"><button class="mini secondary" data-up ${k?"":"disabled"} aria-label="Move up">↑</button><button class="mini secondary" data-down ${k<rows.length-1?"":"disabled"} aria-label="Move down">↓</button><select class="edmove" aria-label="Move to another day"><option value="">Move to…</option>${DAY_IDS.filter(d=>d!==draftDay).map(d=>`<option value="${d}">${DAY_NAMES[d]}</option>`).join("")}</select><button class="mini secondary" data-rm>✕ Remove</button></div></div>`).join("")||'<div class="muted">Rest day — no exercises.</div>';
 }
 function readEditor(){
  draft.titles[draftDay]=$("edTitle").value.trim();
  $("edRows").querySelectorAll(".edrow").forEach(el=>{const r=draft.days[draftDay][+el.dataset.k];
-  r.name=el.querySelector(".edname").value.trim();r.sets=+el.querySelector(".edsets").value;r.target=el.querySelector(".edtarget").value.trim();r.rest=+el.querySelector(".edrest").value;r.opts.hand=el.querySelector(".edhand").checked});
+  r.name=el.querySelector(".edname").value.trim();r.sets=+el.querySelector(".edsets").value;r.target=el.querySelector(".edtarget").value.trim();r.rest=+el.querySelector(".edrest").value;r.opts.hand=el.querySelector(".edhand").checked;r.opts.m=el.querySelector(".edm").value;r.opts.m2=el.querySelector(".edm2").value});
 }
 function editorError(){
  for(const d of DAY_IDS){
@@ -707,13 +761,14 @@ function editorError(){
  }
  return DAY_IDS.some(d=>draft.days[d].length)?null:[draftDay,"Add at least one exercise."];
 }
-// Move logs and notes along with a renamed exercise so its history isn't lost
+// Move logs and notes along with a renamed or moved exercise so its history isn't lost
 function migrateRenames(){
  const logs=loadLogs(),notes=loadNotes();
  for(const d of DAY_IDS)for(const r of draft.days[d]){
-  if(!r.orig||r.orig===r.name)continue;
-  const from=d+"::"+r.orig,to=d+"::"+r.name;
-  if(logs[from]){logs[to]=(logs[to]||[]).concat(logs[from]).sort((a,b)=>String(a.date).localeCompare(String(b.date))||(a.session||0)-(b.session||0));delete logs[from]}
+  const od=r.origDay||d;
+  if(!r.orig||r.orig===r.name&&od===d)continue;
+  const from=od+"::"+r.orig,to=d+"::"+r.name;
+  if(logs[from]){logs[from].forEach(e=>{e.day=d});logs[to]=(logs[to]||[]).concat(logs[from]).sort((a,b)=>String(a.date).localeCompare(String(b.date))||(a.session||0)-(b.session||0));delete logs[from]}
   if(notes[from]){if(!notes[to])notes[to]=notes[from];delete notes[from]}
  }
  saveLogs(logs);store.set(NKEY,notes);
@@ -723,7 +778,7 @@ function saveEditor(){
  readEditor();const err=editorError();
  if(err){draftDay=err[0];renderEditor();$("edMsg").textContent=err[1];return}
  migrateRenames();
- const days={};for(const d of DAY_IDS)if(draft.days[d].length)days[d]=draft.days[d].map(r=>[r.name,r.sets,r.target,r.rest,Object.fromEntries(Object.entries(r.opts).filter(([,v])=>v))]);
+ const days={};for(const d of DAY_IDS)if(draft.days[d].length)days[d]=draft.days[d].map(r=>[r.name,r.sets,r.target,r.rest,{hand:!!r.opts.hand,m:r.opts.m||"",m2:r.opts.m2||""}]);
  const titles={};for(const d of DAY_IDS)if(draft.titles[d])titles[d]=draft.titles[d];
  const pick=$("day").value;closeEditor();applyPlan({titles,days},pick);backupMsg("Routine saved.");
 }
@@ -735,7 +790,7 @@ $("day").addEventListener("change",()=>{if(confirmEnd())reset();else $("day").va
 $("start").addEventListener("click",startWorkout);$("reset").addEventListener("click",()=>{if(confirmEnd()){reset();store.del(SUMKEY)}});
 $("action").addEventListener("click",completeSet);$("pause").addEventListener("click",togglePause);
 $("skip").addEventListener("click",()=>{if(state==="rest"){stopAlert();nextStep()}});
-$("later").addEventListener("click",doLater);$("skipEx").addEventListener("click",skipExercise);
+$("later").addEventListener("click",doLater);$("swapEx").addEventListener("click",swapExercise);$("skipEx").addEventListener("click",skipExercise);
 $("list").addEventListener("click",e=>{
  const r=e.target.closest(".row");if(!r||!active())return;const n=+r.dataset.n;
  if(n===i||done(n))return;
@@ -765,8 +820,14 @@ $("lockAlert").checked=prefs.lockAlert;
 $("lockAlert").addEventListener("change",()=>{prefs.lockAlert=$("lockAlert").checked;store.set(PKEY,prefs);prefs.lockAlert?startAlert():stopAlert()});
 $("editPlan").addEventListener("click",openEditor);$("edCancel").addEventListener("click",closeEditor);$("edSave").addEventListener("click",saveEditor);
 $("edDay").addEventListener("change",()=>{readEditor();draftDay=$("edDay").value;$("edMsg").textContent="";renderEditor()});
-$("edAdd").addEventListener("click",()=>{readEditor();draft.days[draftDay].push({name:"",sets:3,target:"10",rest:60,opts:{},orig:null});renderEditor();const n=$("edRows").querySelectorAll(".edname");n[n.length-1].focus()});
+$("edAdd").addEventListener("click",()=>{readEditor();draft.days[draftDay].push({name:"",sets:3,target:"10",rest:60,opts:{},orig:null,origDay:draftDay});renderEditor();const n=$("edRows").querySelectorAll(".edname");n[n.length-1].focus()});
 $("edDefault").addEventListener("click",()=>{if(!confirm("Replace the whole routine with the default plan? Your logs are kept."))return;const p=normPlan(defaultPlan());draft={titles:p.titles,days:toRows(p.days)};renderEditor()});
+$("edRows").addEventListener("change",e=>{
+ const s=e.target.closest(".edmove");if(!s||!s.value)return;
+ readEditor();const to=s.value,[r]=draft.days[draftDay].splice(+s.closest(".edrow").dataset.k,1);
+ if(draft.days[to].some(x=>x.name===r.name)){draft.days[draftDay].splice(+s.closest(".edrow").dataset.k,0,r);$("edMsg").textContent=`${DAY_NAMES[to]} already has "${r.name}".`;renderEditor();return}
+ draft.days[to].push(r);renderEditor();$("edMsg").textContent=`Moved "${r.name||"exercise"}" to ${DAY_NAMES[to]} — save to keep it.`;
+});
 $("edRows").addEventListener("click",e=>{
  const b=e.target.closest("button"),row=b&&b.closest(".edrow");if(!row)return;
  readEditor();const l=draft.days[draftDay],k=+row.dataset.k;
