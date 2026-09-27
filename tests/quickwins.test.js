@@ -21,7 +21,7 @@ const BASE=process.env.BASE||'http://127.0.0.1:8765';
  await p.click('#start');await p.clock.runFor(1100);ok(await t('countdown')==='Ready…','countdown 2: Ready…');
  await p.clock.runFor(1000);ok(await t('countdown')==='Set…','countdown 1: Set…');
  await p.clock.runFor(1000);ok(await t('countdown')==='Go!','work: Go!');
- ok(await v('weight')==='57.5'&&(await t('suggest')).includes('deload to 57.5 kg'),'3 misses at 65 → deload 57.5: '+await t('suggest'));
+ ok(await v('weight')==='57.5'&&(await t('suggest')).includes('deload to 57.5kg'),'3 misses at 65 → deload 57.5: '+await t('suggest'));
  // --- rest ±30
  ok(!(await p.isVisible('#restAdj')),'rest adjust hidden during work');
  await p.click('#action');ok(await p.isVisible('#restAdj')&&await t('time')==='02:30','rest adjust shown in rest');

@@ -57,6 +57,9 @@ select,input{background:white;color:#111827}select{flex:1}button{font-weight:750
 .edrow{border:1px solid #e5e7eb;border-radius:14px;padding:10px;margin-top:8px}.edname{width:100%;font-weight:700}
 .edgrid{display:grid;grid-template-columns:70px 1fr 84px;gap:6px;margin-top:6px}.edgrid label{font-size:12px;color:#6b7280}.edgrid input{width:100%;margin-top:3px}
 .edbtns{display:flex;gap:6px;margin-top:8px}.edbtns [data-rm]{margin-left:auto}
+.wrow{display:flex;gap:6px}.wrow select{flex:none;width:78px;padding:10px 6px}.wrow input{flex:1;min-width:0}
+.warmbox{margin-top:10px}.warmset span b{color:#6b7280}.edcheck{display:flex;gap:8px;align-items:center;font-size:13px;color:#374151;margin-top:8px}.edcheck input{min-height:0;width:18px;height:18px;padding:0;margin:0}
+.incrow input{flex:none;width:96px}
 .restadj{display:flex;gap:8px;justify-content:center;margin:0 0 12px}.restadj .mini{min-width:72px}
 .summary{position:relative}.sumclose{position:absolute;top:12px;right:12px;min-height:32px;padding:4px 10px}
 .remind{margin-top:10px;padding:10px;background:#eff6ff;border-radius:12px;font-size:14px;display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -94,7 +97,7 @@ select,input{background:white;color:#111827}select{flex:1}button{font-weight:750
 <h2>📈 Log this set</h2>
 <div id="nameA" class="partname" hidden></div>
 <div class="fields">
-<div><label for="weight" id="wlabel">Weight (kg)</label><input id="weight" inputmode="decimal" placeholder="e.g. 70"></div>
+<div><label for="weight" id="wlabel">Weight (kg)</label><div class="wrow"><select id="wmode" aria-label="Weight type"><option value="">kg</option><option value="BW+">BW +</option><option value="BW-">BW −</option></select><input id="weight" inputmode="decimal" placeholder="e.g. 70"></div></div>
 <div id="repsBox"><label for="reps">Reps completed</label><input id="reps" inputmode="numeric" placeholder="e.g. 10"></div>
 <div id="timeBox" hidden><label>Time</label><div class="auto">Recorded automatically</div></div>
 </div>
@@ -107,6 +110,7 @@ select,input{background:white;color:#111827}select{flex:1}button{font-weight:750
 <div><label for="rpe">Effort (RPE, optional)</label><select id="rpe"><option value="">—</option><option>6</option><option>7</option><option>7.5</option><option>8</option><option>8.5</option><option>9</option><option>9.5</option><option>10</option></select></div>
 <div><label for="note">Note (kept for next time)</label><input id="note" placeholder="e.g. seat at 4"></div>
 </div>
+<label class="toggle warmbox" id="warmBox"><input type="checkbox" id="warm"><span>Warm-up set<div class="muted">Logged separately, with a short rest. Doesn't count toward your sets, PRs or volume.</div></span></label>
 <div id="suggest" class="suggest" hidden></div>
 <div id="history" class="history">Last time: —</div>
 <div id="today" class="today"></div>
@@ -141,6 +145,7 @@ select,input{background:white;color:#111827}select{flex:1}button{font-weight:750
 <h2>⚙️ Settings &amp; backup</h2>
 <label class="toggle"><input type="checkbox" id="lockAlert"><span>Alerts when the phone is locked<div class="muted">Plays the rest countdown (and target beeps for timed exercises like plank or cardio) as audio so they sound on the lock screen. On iPhone this pauses your music while it plays.</div></span></label>
 <label class="incrow" for="inc">Weight increment for suggestions<select id="inc"><option>1</option><option>1.25</option><option>2</option><option>2.5</option><option>5</option></select></label>
+<label class="incrow" for="bw">Body weight (kg), for BW exercises<input id="bw" inputmode="decimal" placeholder="e.g. 75"></label>
 <button id="editPlan" class="secondary wide">✏️ Edit routine</button>
 <div class="backup"><button id="export" class="secondary">⬇ Export log</button><button id="importBtn" class="secondary">⬆ Import log</button></div>
 <input type="file" id="import" accept="application/json,.json" hidden>
@@ -188,11 +193,14 @@ const PLKEY="gymTrackerPlanV1",DAY_IDS=["mon","tue","wed","thu","fri","sat","sun
 const DAY_NAMES={mon:"Monday",tue:"Tuesday",wed:"Wednesday",thu:"Thursday",fri:"Friday",sat:"Saturday",sun:"Sunday"};
 const DEFAULT_TITLES={mon:"Push 1",tue:"Legs",wed:"Pull 1",thu:"Cardio + Abs",fri:"Push 2",sat:"Pull 2"};
 // plan = {titles:{day:title}, days:{day:[[name, sets, target, restSeconds], ...]}}; a day with no exercises is a rest day
+// Optional 5th element per exercise: opts {hand: weights are per hand (dumbbells)}
 function validPlan(p){
- return !!p&&typeof p.days==="object"&&Object.entries(p.days).every(([d,l])=>DAY_IDS.includes(d)&&Array.isArray(l)&&l.every(x=>Array.isArray(x)&&typeof x[0]==="string"&&x[0]&&!x[0].includes("::")&&Number.isInteger(x[1])&&x[1]>0&&typeof x[2]==="string"&&Number.isInteger(x[3])&&x[3]>=0))&&Object.values(p.days).some(l=>l.length);
+ return !!p&&typeof p.days==="object"&&Object.entries(p.days).every(([d,l])=>DAY_IDS.includes(d)&&Array.isArray(l)&&l.every(x=>Array.isArray(x)&&typeof x[0]==="string"&&x[0]&&!x[0].includes("::")&&Number.isInteger(x[1])&&x[1]>0&&typeof x[2]==="string"&&Number.isInteger(x[3])&&x[3]>=0&&(x[4]===undefined||!!x[4]&&typeof x[4]==="object"&&!Array.isArray(x[4]))))&&Object.values(p.days).some(l=>l.length);
 }
+const DEFAULT_OPTS={"mon::Incline Dumbbell Press + Incline Fly":{hand:true},"mon::Side Laterals":{hand:true},"tue::Dumbbell Squats":{hand:true},"wed::Alternate Dumbbell Curl":{hand:true},"fri::Seated Dumbbell Press":{hand:true},"sat::Hammer Curl":{hand:true}};
 const defaultPlan=()=>JSON.parse(JSON.stringify({titles:DEFAULT_TITLES,days:DEFAULT_DAYS}));
-function normPlan(p){const days={};for(const d of DAY_IDS)if(p.days[d]&&p.days[d].length)days[d]=p.days[d];return{titles:{...(p.titles||{})},days}}
+// Exercises without opts (older saved plans, the default plan) get the default opts for that name
+function normPlan(p){const days={};for(const d of DAY_IDS)if(p.days[d]&&p.days[d].length)days[d]=p.days[d].map(x=>x.length>4?x:[...x.slice(0,4),{...(DEFAULT_OPTS[d+"::"+x[0]]||{})}]);return{titles:{...(p.titles||{})},days}}
 let plan=normPlan((()=>{const s=store.get(PLKEY,null);return validPlan(s)?s:defaultPlan()})()),W=plan.days;
 const plannedDays=()=>DAY_IDS.filter(d=>W[d]);
 const dayId=d=>DAY_IDS[(d.getDay()+6)%7];
@@ -256,21 +264,28 @@ function timedTarget(x=items[i]){const m=x[2].match(/(\d+)\s*(?:[–-]\s*(\d+))?
 // "15, 12, 10, 8" with 4 sets → the target for this set; anything else is shown as-is
 function target(){const t=items[i][2],p=t.split(",").map(s=>s.trim());return p.length===items[i][1]?p[set-1]:t}
 function entries(){return loadLogs()[exerciseKey()]||[]}
-function prevEntry(){const l=entries().filter(e=>e.session!==session);return l[l.length-1]}
+function prevEntry(){const l=entries().filter(e=>e.session!==session&&e.sets.length);return l[l.length-1]}
 function curEntry(){return session?entries().find(e=>e.session===session):null}
-function fmtSet(x,timed=!!timedTarget()){
- const part=(w,r)=>has(w)&&has(r)?`${w}kg × ${r}`:has(w)?`${w}kg`:has(r)?`${r} reps`:"";
+function fmtSet(x,timed=!!timedTarget(),hand=isHand()){
+ const part=(w,r)=>has(w)&&has(r)?`${wLabel(w,hand)} × ${r}`:has(w)?wLabel(w,hand):has(r)?`${r} reps`:"";
  let s=part(x.weight,x.reps);const b=part(x.weight2,x.reps2);if(b)s=(s||"—")+" + "+b;
  if(timed&&x.time)s=(s?s+" · ":"")+fmt(x.time);
  if(has(x.rpe))s+=` @${x.rpe}`;
  return s||"not logged";
 }
 const fmtSets=e=>e.sets.map(x=>fmtSet(x)).join(" · ");
+const isHand=(x=items[i])=>!!(x[4]&&x[4].hand);
+// Weight strings are plain kg ("70"), bodyweight ("BW"), weighted ("BW+10") or assisted ("BW-20")
+function parseW(v){if(!has(v))return null;const m=String(v).trim().match(/^BW(?:\s*([+-])\s*(\d+(?:\.\d+)?))?$/i);if(m)return{bw:true,add:m[1]?(m[1]==="+"?1:-1)*+m[2]:0};const n=num(v);return n==null?null:{bw:false,add:n}}
+const bwStr=a=>a?`BW${a>0?"+":"-"}${Math.abs(a)}`:"BW";
+// Effective load in kg: bodyweight from Settings plus/minus the added weight
+function effW(v){const p=parseW(v);return !p?null:p.bw?(prefs.bw||0)+p.add:p.add}
+function wLabel(v,hand){const p=parseW(v);if(!p)return String(v);return p.bw?bwStr(p.add).replace("-","−"):`${v}kg${hand?"/hand":""}`}
 const num=v=>{const n=parseFloat(v);return isFinite(n)?n:null};
 // PRs and the progress chart score sets by estimated 1RM (Epley) when the exercise is logged with weight × reps,
 // by time for timed work, and by reps for bodyweight moves
-function modeOf(list,timed){return timed?"time":list.some(e=>e.sets.some(x=>num(x.weight)&&num(x.reps)))?"e1rm":"reps"}
-function score(x,m){if(m==="time")return x.time||null;const w=num(x.weight),r=num(x.reps);if(m==="e1rm")return w&&r?w*(1+Math.min(r,30)/30):null;return r}
+function modeOf(list,timed){return timed?"time":list.some(e=>e.sets.some(x=>effW(x.weight)>0&&num(x.reps)))?"e1rm":"reps"}
+function score(x,m){if(m==="time")return x.time||null;const w=effW(x.weight),r=num(x.reps);if(m==="e1rm")return w&&r?w*(1+Math.min(r,30)/30):null;return r}
 const fmtScore=(v,m)=>m==="time"?fmt(v):m==="e1rm"?`${Math.round(v*10)/10} kg`:`${v} reps`;
 const bestOf=(e,m)=>e.sets.reduce((a,x)=>{const s=score(x,m);return s!=null&&(a==null||s>score(a,m))?x:a},null);
 // Best score in sessions before this entry (null if there is no earlier session to beat)
@@ -289,7 +304,8 @@ function prSets(list,entry,timed){
 function configureFields(){
  const p=parts(),sup=p.length>1,timed=!!timedTarget();
  $("nameA").hidden=$("partB").hidden=!sup;$("nameA").textContent=p[0];$("nameB").textContent=p[1]||"";
- $("repsBox").hidden=timed;$("timeBox").hidden=!timed;$("wlabel").textContent=timed?"Weight (kg, optional)":"Weight (kg)";
+ $("repsBox").hidden=timed;$("timeBox").hidden=!timed;$("warmBox").hidden=timed;$("warm").checked=false;
+ $("wlabel").textContent=timed?"Weight (optional)":isHand()?"Weight per hand":"Weight";
  $("note").value=loadNotes()[exerciseKey()]||"";
 }
 function showHistory(){
@@ -300,7 +316,7 @@ function showHistory(){
 function editorRow(x,timed,sup){
  const val=v=>has(v)?esc(v):"";
  return `<div class="setrow editor" data-set="${x.set}"><b>Set ${x.set}</b>
- <input class="ew" inputmode="decimal" placeholder="kg" value="${val(x.weight)}">${timed?"":`<input class="er" inputmode="numeric" placeholder="reps" value="${val(x.reps)}">`}
+ <input class="ew" placeholder="kg / BW+10" value="${val(x.weight)}">${timed?"":`<input class="er" inputmode="numeric" placeholder="reps" value="${val(x.reps)}">`}
  ${sup?`<span class="plus">+</span><input class="ew2" inputmode="decimal" placeholder="kg" value="${val(x.weight2)}"><input class="er2" inputmode="numeric" placeholder="reps" value="${val(x.reps2)}">`:""}
  <input class="erpe" inputmode="decimal" placeholder="RPE" value="${val(x.rpe)}">
  <button class="mini" data-save>Save</button><button class="mini secondary" data-cancel>Cancel</button></div>`;
@@ -309,7 +325,8 @@ function editorRow(x,timed,sup){
 function setRows(key,idx,entry){
  const x0=itemFor(key),timed=!!timedTarget(x0),sup=parts(x0).length>1,sets=entry?entry.sets:[];
  const prs=entry?prSets(loadLogs()[key]||[],entry,timed):new Set(),ed=editing&&editing.key===key&&editing.idx===idx?editing.set:null;
- const rows=sets.map(x=>ed===x.set?editorRow(x,timed,sup):`<div class="setrow"><span><b>Set ${x.set}</b> ${esc(fmtSet(x,timed))}${prs.has(x.set)?' <span class="pr">🏆 PR</span>':""}</span><button class="mini secondary" data-edit="${x.set}">Edit</button><button class="mini secondary" data-del="${x.set}" aria-label="Delete set ${x.set}">✕</button></div>`);
+ const hand=isHand(x0),warm=(entry&&entry.warm||[]).map((x,k)=>`<div class="setrow warmset"><span><b>Warm-up</b> ${esc(fmtSet(x,timed,hand))}</span><button class="mini secondary" data-delwarm="${k}" aria-label="Delete warm-up">✕</button></div>`);
+ const rows=warm.concat(sets.map(x=>ed===x.set?editorRow(x,timed,sup):`<div class="setrow"><span><b>Set ${x.set}</b> ${esc(fmtSet(x,timed,hand))}${prs.has(x.set)?' <span class="pr">🏆 PR</span>':""}</span><button class="mini secondary" data-edit="${x.set}">Edit</button><button class="mini secondary" data-del="${x.set}" aria-label="Delete set ${x.set}">✕</button></div>`));
  if(ed==="new")rows.push(editorRow({set:sets.length?Math.max(...sets.map(x=>x.set))+1:1},timed,sup));
  return rows.join("");
 }
@@ -325,12 +342,17 @@ function updateEntry(key,idx,fn){
  if(!e&&idx==="cur"){e={day:key.split("::")[0],date:today(),session,sets:[]};list.push(e)}
  if(!e)return;
  fn(e);e.sets.sort((a,b)=>a.set-b.set);
- if(!e.sets.length)list.splice(list.indexOf(e),1);
+ if(!e.sets.length&&!(e.warm&&e.warm.length))list.splice(list.indexOf(e),1);
  if(!list.length)delete logs[key];
  saveLogs(logs);showHistory();renderProgress();
 }
 const updateLog=fn=>updateEntry(exerciseKey(),"cur",fn);
 function putSet(e,rec){const n=e.sets.findIndex(x=>x.set===rec.set);if(n<0)e.sets.push(rec);else e.sets[n]=rec}
+// The main weight field is a kg number plus a mode: plain kg, BW + added, or BW − assistance
+function setWeightField(v){const p=parseW(v);if(p&&p.bw){$("wmode").value=p.add<0?"BW-":"BW+";$("weight").value=p.add?String(Math.abs(p.add)):""}else{$("wmode").value="";$("weight").value=has(v)?v:""}weightPlaceholder()}
+function weightPlaceholder(){$("weight").placeholder={"":"e.g. 70","BW+":"added kg","BW-":"assist kg"}[$("wmode").value]}
+function composeWeight(){const m=$("wmode").value,v=$("weight").value.trim();return m?(v&&+v?m+v:"BW"):v}
+const mainField=f=>f==="weight"?composeWeight():$(f).value.trim();
 function readFields(rec,get){for(const f of ["weight","reps","weight2","reps2","rpe"]){const v=get(f);if(has(v))rec[f]=v;else delete rec[f]}return rec}
 // Top of the rep target for this set (part 1 = second half of a superset), or null if there isn't a clear number:
 // "12, 10, 8, 6" → per set, "15–20" → 20, "12 + 15" → 12 / 15, "controlled" → null
@@ -356,22 +378,26 @@ function suggest(ps,part){
   if(t>=tt[1])return`⏱ You went ${fmt(t)} last time — go for ${fmt(t+Math.max(5,Math.round(t*.1/5)*5))}`;
   return t>=tt[0]?`⏱ ${fmt(t)} last time — push toward ${fmt(tt[1])}`:`⏱ Aim for ${fmt(tt[0])} (last time ${fmt(t)})`;
  }
- const wf=part?"weight2":"weight",rf=part?"reps2":"reps",tgt=repTop(set,part),w=num(ps[wf]),r=num(ps[rf]);
+ const wf=part?"weight2":"weight",rf=part?"reps2":"reps",tgt=repTop(set,part),pw=parseW(ps[wf]),r=num(ps[rf]),inc=prefs.inc||2.5,hand=isHand();
  if(tgt==null||r==null)return"";
- const who=parts().length>1?parts()[part]+": ":"",say=s=>who?who+s:s[0].toUpperCase()+s.slice(1);
- if(!w){
-  if(has(ps[wf]))return"";
-  return r>=tgt?`💪 ${say(`you hit ${r} reps last time — go for ${r+1}+ or add weight`)}`:`🎯 ${say(`aim for ${tgt} reps (last time ${r})`)}`;
+ const who=parts().length>1?parts()[part]+": ":"",say=s=>who?who+s:s[0].toUpperCase()+s.slice(1),lbl=v=>wLabel(v,hand);
+ const setW=v=>part?$("weight2").value=v:setWeightField(v);
+ if(!pw||pw.bw&&!pw.add&&r>=tgt)return r>=tgt?`💪 ${say(`you hit ${r} reps last time — go for ${r+1}+ or add weight`)}`:`🎯 ${say(`aim for ${tgt} reps (last time ${r})`)}`;
+ if(pw.bw){
+  // weighted: add load; assisted: take assistance away
+  if(r>=tgt){const nv=bwStr(+(pw.add+inc).toFixed(2));setW(nv);$(rf).value=String(tgt);return`📈 ${say(`you hit ${r} reps at ${lbl(ps[wf])} last time — try ${lbl(nv)}`)}`}
+  return`🎯 ${say(`aim for ${tgt} reps at ${lbl(ps[wf])} (last time ${r})`)}`;
  }
- if(r>=tgt){const nw=+(w+(prefs.inc||2.5)).toFixed(2);$(wf).value=String(nw);$(rf).value=String(tgt);return`📈 ${say(`you hit ${r} reps at ${w} kg last time — try ${nw} kg`)}`}
- if(stalled(wf,rf,w,tgt)){const nw=roundInc(w*.9);$(wf).value=String(nw);return`🔁 ${say(`stuck at ${w} kg for 3 sessions — deload to ${nw} kg and build back up`)}`}
- return`🎯 ${say(`aim for ${tgt} reps at ${w} kg (last time ${r})`)}`;
+ const w=pw.add;if(!w)return"";
+ if(r>=tgt){const nw=String(+(w+inc).toFixed(2));setW(nw);$(rf).value=String(tgt);return`📈 ${say(`you hit ${r} reps at ${lbl(String(w))} last time — try ${lbl(nw)}`)}`}
+ if(stalled(wf,rf,w,tgt)){const nw=String(roundInc(w*.9));setW(nw);return`🔁 ${say(`stuck at ${lbl(String(w))} for 3 sessions — deload to ${lbl(nw)} and build back up`)}`}
+ return`🎯 ${say(`aim for ${tgt} reps at ${lbl(String(w))} (last time ${r})`)}`;
 }
 // Pre-fill from the same set last session, else the last set logged today
 function prefill(){
  const p=prevEntry(),c=curEntry(),ps=p&&p.sets.find(x=>x.set===set);
  const s=ps||c&&c.sets[c.sets.length-1]||p&&p.sets[p.sets.length-1]||{};
- for(const f of ["weight","reps","weight2","reps2"])$(f).value=has(s[f])?s[f]:"";
+ for(const f of ["reps","weight2","reps2"])$(f).value=has(s[f])?s[f]:"";setWeightField(s.weight);
  $("rpe").value="";
  const tips=ps&&session?[suggest(ps,0),suggest(ps,1)].filter(Boolean):[];
  $("suggest").innerHTML=tips.map(esc).join("<br>");$("suggest").hidden=!tips.length;
@@ -435,7 +461,7 @@ function renderProgress(){
  $("pEx").hidden=false;
  $("pEx").innerHTML=keys.map(k=>{const[d,n]=k.split("::");return`<option value="${esc(k)}">${DAY_NAMES[d]?DAY_NAMES[d].slice(0,3):esc(d)} · ${esc(n)}</option>`}).join("");$("pEx").value=pKey;
  const list=logs[pKey],x0=itemFor(pKey),timed=!!timedTarget(x0),m=modeOf(list,timed);
- const pts=list.map(e=>{const b=bestOf(e,m);return b&&{date:e.date,v:+score(b,m).toFixed(1),set:fmtSet(b,timed)}}).filter(Boolean);
+ const pts=list.map(e=>{const b=bestOf(e,m);return b&&{date:e.date,v:+score(b,m).toFixed(1),set:fmtSet(b,timed,isHand(x0))}}).filter(Boolean);
  const title={e1rm:"Best estimated 1RM per session (kg)",time:"Longest set per session",reps:"Most reps in a set per session"}[m];
  $("chart").innerHTML=pts.length?`<div class="ctitle">${title}</div>${chartSVG(pts,m)}${pts.length<2?'<div class="muted">Log another session to see a trend.</div>':""}`:'<div class="muted">No weights or reps logged for this exercise yet.</div>';
  $("chart").pts=pts;$("chart").mode=m;
@@ -465,7 +491,7 @@ function reset(){
  $("info").textContent="Tap Start. You'll get a 3-second countdown before each set.";
  $("countdown").textContent="";$("set").textContent="—";$("exno").textContent="—";$("elapsed").textContent="00:00";
  $("action").disabled=true;$("action").textContent="START SET";$("pause").textContent="Ⅱ Pause";
- $("start").disabled=false;configureFields();prefill();$("weight").value=$("reps").value=$("weight2").value=$("reps2").value="";render();
+ $("start").disabled=false;configureFields();prefill();$("weight").value=$("reps").value=$("weight2").value=$("reps2").value="";setWeightField("");render();
 }
 function prepareSet(){
  unpause();state="countdown";endAt=Date.now()+3000;lastShown=3;editing=null;$("restAdj").hidden=true;
@@ -491,7 +517,7 @@ function startSet(keep){
 }
 // Every completed set is saved, even with blank fields, so it can be filled in later with Edit
 function saveCurrentSet(secs){
- const rec=readFields({set,time:secs},f=>$(f).value.trim());
+ const rec=readFields({set,time:secs},mainField);
  updateLog(e=>putSet(e,rec));
  return rec;
 }
@@ -501,10 +527,10 @@ function isNewPR(rec){
  const m=modeOf(list,!!timedTarget()),s=score(rec,m),b=priorBest(list,e,m);
  return s!=null&&b!=null&&s>b&&e.sets.every(x=>x.set===rec.set||!(score(x,m)>=s));
 }
-function showRest(){
+function showRest(warm){
  const d=progress[items[i][0]]||0,n=nextIncomplete(i);
  $("phase").textContent="REST";$("time").textContent=fmt(remainingSec());$("exercise").textContent=items[i][0];$("countdown").textContent="";
- $("info").textContent=d<items[i][1]?`Rest now. Next is Set ${d+1}.`:n<0?"Rest now. Then you're done.":`Rest now. Next: ${items[n][0]}`;
+ $("info").textContent=warm?`Warm-up logged. Next is Set ${d+1}.`:d<items[i][1]?`Rest now. Next is Set ${d+1}.`:n<0?"Rest now. Then you're done.":`Rest now. Next: ${items[n][0]}`;
  $("action").disabled=true;$("action").textContent="RESTING…";$("restAdj").hidden=false;
 }
 function adjustRest(d){
@@ -513,7 +539,13 @@ function adjustRest(d){
  lastShown=null;$("time").textContent=fmt(remainingSec());saveSession();if(!paused)startAlert();
 }
 function completeSet(){
- if(state!=="work")return;const secs=workSec();unpause();stopAlert();const pr=isNewPR(saveCurrentSet(secs));
+ if(state!=="work")return;const secs=workSec();unpause();stopAlert();
+ if($("warm").checked){
+  // warm-ups don't advance the set count; rest is capped at a minute
+  const rec=readFields({time:secs},mainField);updateLog(e=>{(e.warm||(e.warm=[])).push(rec)});$("warm").checked=false;
+  state="rest";const rest=Math.min(items[i][3]||60,60);endAt=Date.now()+rest*1000;lastShown=rest;
+  showRest(true);render();vibrate([100]);saveSession();startAlert();return;
+ }const pr=isNewPR(saveCurrentSet(secs));
  progress[items[i][0]]=Math.max(progress[items[i][0]]||0,set);state="rest";
  const rest=items[i][3]||60;endAt=Date.now()+rest*1000;lastShown=rest;
  showRest();render();vibrate([100,80,100]);saveSession();startAlert();
@@ -528,9 +560,10 @@ function showSummary(dur){
  for(const x of items){
   const list=logs[day+"::"+x[0]]||[],e=list.find(y=>y.session===session);if(!e)continue;
   const timed=!!timedTarget(x);sets+=e.sets.length;
-  for(const s of e.sets)vol+=(num(s.weight)||0)*(num(s.reps)||0)+(num(s.weight2)||0)*(num(s.reps2)||0);
+  const k=isHand(x)?2:1;
+  for(const s of e.sets)vol+=k*((effW(s.weight)||0)*(num(s.reps)||0)+(num(s.weight2)||0)*(num(s.reps2)||0));
   const pr=prSets(list,e,timed);
-  if(pr.size){const best=bestOf({sets:e.sets.filter(s=>pr.has(s.set))},modeOf(list,timed));prs.push(`${x[0]}: ${fmtSet(best,timed)}`)}
+  if(pr.size){const best=bestOf({sets:e.sets.filter(s=>pr.has(s.set))},modeOf(list,timed));prs.push(`${x[0]}: ${fmtSet(best,timed,isHand(x))}`)}
  }
  const doneN=items.filter(x=>(progress[x[0]]||0)>=x[1]&&!skipped[x[0]]).length,skipN=Object.keys(skipped).length;
  const stale=workoutCount(logs)>=3&&(!prefs.lastExport||Date.now()-prefs.lastExport>14*864e5);
@@ -636,7 +669,7 @@ async function importLogs(file){
  }catch(e){backupMsg("That file isn't a Gym Timer backup.")}
 }
 let draft=null,draftDay="mon";
-const toRows=days=>Object.fromEntries(DAY_IDS.map(d=>[d,(days[d]||[]).map(x=>({name:x[0],sets:x[1],target:x[2],rest:x[3],orig:x[0]}))]));
+const toRows=days=>Object.fromEntries(DAY_IDS.map(d=>[d,(days[d]||[]).map(x=>({name:x[0],sets:x[1],target:x[2],rest:x[3],opts:{...(x[4]||{})},orig:x[0]}))]));
 function openEditor(){
  if(active())return;
  draft={titles:{...plan.titles},days:toRows(plan.days)};draftDay=$("day").value||"mon";
@@ -652,12 +685,13 @@ function renderEditor(){
  <div class="edgrid"><label>Sets<input class="edsets" type="number" inputmode="numeric" min="1" max="20" value="${r.sets}"></label>
  <label>Target<input class="edtarget" value="${esc(r.target)}" placeholder="12, 10, 8"></label>
  <label>Rest (s)<input class="edrest" type="number" inputmode="numeric" min="0" max="900" value="${r.rest}"></label></div>
+ <label class="edcheck"><input type="checkbox" class="edhand" ${r.opts.hand?"checked":""}> Weights are per hand (dumbbells)</label>
  <div class="edbtns"><button class="mini secondary" data-up ${k?"":"disabled"} aria-label="Move up">↑</button><button class="mini secondary" data-down ${k<rows.length-1?"":"disabled"} aria-label="Move down">↓</button><button class="mini secondary" data-rm>✕ Remove</button></div></div>`).join("")||'<div class="muted">Rest day — no exercises.</div>';
 }
 function readEditor(){
  draft.titles[draftDay]=$("edTitle").value.trim();
  $("edRows").querySelectorAll(".edrow").forEach(el=>{const r=draft.days[draftDay][+el.dataset.k];
-  r.name=el.querySelector(".edname").value.trim();r.sets=+el.querySelector(".edsets").value;r.target=el.querySelector(".edtarget").value.trim();r.rest=+el.querySelector(".edrest").value});
+  r.name=el.querySelector(".edname").value.trim();r.sets=+el.querySelector(".edsets").value;r.target=el.querySelector(".edtarget").value.trim();r.rest=+el.querySelector(".edrest").value;r.opts.hand=el.querySelector(".edhand").checked});
 }
 function editorError(){
  for(const d of DAY_IDS){
@@ -689,7 +723,7 @@ function saveEditor(){
  readEditor();const err=editorError();
  if(err){draftDay=err[0];renderEditor();$("edMsg").textContent=err[1];return}
  migrateRenames();
- const days={};for(const d of DAY_IDS)if(draft.days[d].length)days[d]=draft.days[d].map(r=>[r.name,r.sets,r.target,r.rest]);
+ const days={};for(const d of DAY_IDS)if(draft.days[d].length)days[d]=draft.days[d].map(r=>[r.name,r.sets,r.target,r.rest,Object.fromEntries(Object.entries(r.opts).filter(([,v])=>v))]);
  const titles={};for(const d of DAY_IDS)if(draft.titles[d])titles[d]=draft.titles[d];
  const pick=$("day").value;closeEditor();applyPlan({titles,days},pick);backupMsg("Routine saved.");
 }
@@ -712,6 +746,7 @@ function onSetClick(e){
  const b=e.target.closest("button"),blk=b&&b.closest("[data-key]");if(!blk)return;
  const key=blk.dataset.key,idx=blk.dataset.idx==="cur"?"cur":+blk.dataset.idx,d=b.dataset,rerender=()=>{renderToday();renderProgress()};
  if(d.edit){editing={key,idx,set:+d.edit};rerender()}
+ else if(d.delwarm!=null)updateEntry(key,idx,x=>{x.warm.splice(+d.delwarm,1);if(!x.warm.length)delete x.warm});
  else if(d.del){if(confirm(`Delete set ${d.del}?`))updateEntry(key,idx,x=>{x.sets=x.sets.filter(s=>s.set!==+d.del)})}
  else if("add" in d){editing={key,idx,set:"new"};rerender()}
  else if("cancel" in d){editing=null;rerender()}
@@ -730,8 +765,8 @@ $("lockAlert").checked=prefs.lockAlert;
 $("lockAlert").addEventListener("change",()=>{prefs.lockAlert=$("lockAlert").checked;store.set(PKEY,prefs);prefs.lockAlert?startAlert():stopAlert()});
 $("editPlan").addEventListener("click",openEditor);$("edCancel").addEventListener("click",closeEditor);$("edSave").addEventListener("click",saveEditor);
 $("edDay").addEventListener("change",()=>{readEditor();draftDay=$("edDay").value;$("edMsg").textContent="";renderEditor()});
-$("edAdd").addEventListener("click",()=>{readEditor();draft.days[draftDay].push({name:"",sets:3,target:"10",rest:60,orig:null});renderEditor();const n=$("edRows").querySelectorAll(".edname");n[n.length-1].focus()});
-$("edDefault").addEventListener("click",()=>{if(!confirm("Replace the whole routine with the default plan? Your logs are kept."))return;const p=defaultPlan();draft={titles:p.titles,days:toRows(p.days)};renderEditor()});
+$("edAdd").addEventListener("click",()=>{readEditor();draft.days[draftDay].push({name:"",sets:3,target:"10",rest:60,opts:{},orig:null});renderEditor();const n=$("edRows").querySelectorAll(".edname");n[n.length-1].focus()});
+$("edDefault").addEventListener("click",()=>{if(!confirm("Replace the whole routine with the default plan? Your logs are kept."))return;const p=normPlan(defaultPlan());draft={titles:p.titles,days:toRows(p.days)};renderEditor()});
 $("edRows").addEventListener("click",e=>{
  const b=e.target.closest("button"),row=b&&b.closest(".edrow");if(!row)return;
  readEditor();const l=draft.days[draftDay],k=+row.dataset.k;
@@ -741,6 +776,9 @@ $("edRows").addEventListener("click",e=>{
  renderEditor();
 });
 $("inc").value=String(prefs.inc||2.5);
+$("bw").value=prefs.bw?String(prefs.bw):"";
+$("bw").addEventListener("change",()=>{const v=num($("bw").value);if(v>0)prefs.bw=v;else delete prefs.bw;$("bw").value=prefs.bw?String(prefs.bw):"";store.set(PKEY,prefs);renderProgress()});
+$("wmode").addEventListener("change",weightPlaceholder);
 $("inc").addEventListener("change",()=>{prefs.inc=+$("inc").value;store.set(PKEY,prefs);if(active())prefill()});
 $("export").addEventListener("click",exportLogs);
 $("restMinus").addEventListener("click",()=>adjustRest(-30));$("restPlus").addEventListener("click",()=>adjustRest(30));

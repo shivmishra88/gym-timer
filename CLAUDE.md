@@ -12,7 +12,7 @@ Live at https://shivmishra88.github.io/gym-timer/ (GitHub Pages, `main` branch r
 
 ## How the script is organised
 
-- `DEFAULT_DAYS` is the built-in plan; the live plan is `plan = {titles, days}` loaded from storage, with `W = plan.days` (`W[day] = [[name, sets, target, restSeconds], ...]`, days `mon`–`sun`, and a missing day is a rest day). The routine editor (`openEditor`/`saveEditor`) edits a draft and then calls `applyPlan`; renaming an exercise moves its logs and notes (`migrateRenames`). The editor is disabled mid-workout. `" + "` in a name = superset; a target like `"45–60 sec"` / `"30–45 min"` = timed exercise.
+- `DEFAULT_DAYS` is the built-in plan; the live plan is `plan = {titles, days}` loaded from storage, with `W = plan.days` (`W[day] = [[name, sets, target, restSeconds, opts], ...]`, days `mon`–`sun`, and a missing day is a rest day). `opts` is `{hand}` (per-hand dumbbell weights, ×2 for volume); `normPlan` fills missing opts from `DEFAULT_OPTS`, and the editor always saves an opts object so a user's unticked option isn't refilled. The routine editor (`openEditor`/`saveEditor`) edits a draft and then calls `applyPlan`; renaming an exercise moves its logs and notes (`migrateRenames`). The editor is disabled mid-workout. `" + "` in a name = superset; a target like `"45–60 sec"` / `"30–45 min"` = timed exercise.
 - State machine: `ready → countdown → work → rest → … → done`. One `tick()` every 250 ms computes everything from the wall clock (`endAt`), so timers survive the phone locking. In `work`, `endAt` is when the set *started*; in `countdown`/`rest` it's when the timer ends.
 - `progress[name]` = sets completed this session; `skipped[name]`; `nextIncomplete()` drives Do later / Skip / tap-to-jump and wrap-around.
 - The session is saved to `localStorage` on every transition and restored on load (discarded after 3 h).
@@ -22,10 +22,10 @@ Live at https://shivmishra88.github.io/gym-timer/ (GitHub Pages, `main` branch r
 
 | Key | Shape |
 |---|---|
-| `gymTrackerLogsV1` | `{ "day::Exercise": [ {day, date:"YYYY-MM-DD" (local), session:<start ms>, sets:[{set, weight, reps, weight2, reps2, rpe, time}]} ] }` — lists kept in date order; legacy entries may lack `session` |
+| `gymTrackerLogsV1` | `{ "day::Exercise": [ {day, date:"YYYY-MM-DD" (local), session:<start ms>, sets:[{set, weight, reps, weight2, reps2, rpe, time}], warm:[{weight, reps, time}]} ] }` — lists kept in date order; legacy entries may lack `session`. `weight` is a string: `"70"`, `"BW"`, `"BW+10"` or `"BW-20"` (assisted); use `parseW`/`effW` (effective kg = body weight from prefs ± added), never `num()`, on weights. Warm-ups live in `warm` and are ignored by PRs, volume, charts and suggestions |
 | `gymTrackerSessionV1` | in-progress workout state (see `saveSession`) |
 | `gymTrackerNotesV1` | `{ "day::Exercise": "note" }` |
-| `gymTrackerPrefsV1` | `{ lockAlert, inc, lastExport }` (inc = weight increment for suggestions; lastExport = ms of last backup) |
+| `gymTrackerPrefsV1` | `{ lockAlert, inc, lastExport, bw }` (inc = weight increment for suggestions; lastExport = ms of last backup; bw = body weight kg) |
 | `gymTrackerSummaryV1` | `{ date, html }`, the last workout summary, re-shown on reload the same day until dismissed |
 | `gymTrackerPlanV1` | `{ titles:{day:title}, days:{day:[[name, sets, target, restSeconds]]} }` — validated by `validPlan` |
 
@@ -35,7 +35,7 @@ PRs and the chart score sets by: estimated 1RM (Epley, `modeOf` = `e1rm`) if the
 
 Progression suggestions (`suggest`/`repTop`) work per set from the same set last session:
 - **Weighted:** double progression. If you reached the top of that set's rep target, pre-fill weight + increment and the target reps; otherwise keep the weight and show the target. After 3 sessions stuck at the same weight below target (`stalled`), suggest a 10% deload rounded to the increment. Rep targets are parsed from `"12, 10, 8, 6"` (per set), `"15–20"` (→ 20) and `"12 + 15"` (each superset half).
-- **Bodyweight (reps only):** go for one more rep.
+- **Bodyweight (reps only, or plain BW):** go for one more rep. **Weighted/assisted BW:** hit the target → BW+x adds the increment and BW−x takes that much assistance away.
 - **Timed:** at or above the max target, go ~10% longer; otherwise aim for the min/max target.
 
 ## Testing
@@ -43,7 +43,7 @@ Progression suggestions (`suggest`/`repTop`) work per set from the same set last
 ```bash
 tests/run.sh      # installs playwright-core once, serves the repo on :8765, runs every tests/*.test.js
 ```
-It needs Google Chrome installed (`channel: 'chrome'`). The tests use Playwright's fake clock, so allow ~300 ms of slack when checking displayed times (the ticker runs every 250 ms). 151 checks across 6 files, all passing. Nothing has been verified on a real iPhone yet (see "Needs checking on device").
+It needs Google Chrome installed (`channel: 'chrome'`). The tests use Playwright's fake clock, so allow ~300 ms of slack when checking displayed times (the ticker runs every 250 ms). 173 checks across 7 files, all passing. Nothing has been verified on a real iPhone yet (see "Needs checking on device").
 
 ## Pushing
 
@@ -65,7 +65,7 @@ Came from a PM + lifter review of v3 (the version originally built in ChatGPT).
 
 The five-step roadmap from the original review is complete. The owner then asked for the pending features, done in batches (cloud sync and lb units deliberately left out: sync needs a backend decision, and all data is in kg):
 - [x] **Batch A — quick wins**: rest ±30 s, lock-screen alert for timed work, backup reminder (summary + "Last backup" in Settings), summary persists after reload (dismissable), countdown copy "Ready… / Set… / Go!", log panel collapses when done, timed/bodyweight suggestions, deload hint.
-- [ ] **Batch B — logging**: warm-up sets (excluded from PRs/volume), bodyweight/assisted weights (BW, BW+x, BW−x), per-hand dumbbell weights (×2 volume).
+- [x] **Batch B — logging**: warm-up sets (toggle; logged in `warm`, rest capped at 60 s, set count unchanged), bodyweight/assisted weights (kg / BW + / BW − selector, since the iPhone decimal keypad has no letters or minus; body weight in Settings), per-hand dumbbell weights (editor checkbox, "/hand" labels, ×2 volume).
 - [ ] **Batch C — program**: swap exercise for an alternative, move exercises between days in the editor, muscle tags + weekly sets per muscle.
 - [ ] **Batch D — dark mode.**
 
@@ -82,8 +82,6 @@ The five-step roadmap from the original review is complete. The owner then asked
 **Features**
 - Move an exercise between days in the editor (currently remove + add, which doesn't carry history over).
 - Swap an exercise for an alternative (e.g. machine taken → dumbbell version).
-- Warm-up sets (excluded from PRs/volume).
-- Bodyweight / assisted weights (negative or "BW+10"), per-hand vs total dumbbell weight (batch B).
 - Weekly volume per muscle group (needs a muscle tag per exercise).
 - Optional cloud sync (would need a backend or a GitHub-gist/Drive approach) — not started; owner to decide.
 - lb units — not started; all stored weights are kg, so this needs a unit per set or a display-only conversion.

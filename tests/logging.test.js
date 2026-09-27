@@ -29,7 +29,7 @@ const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)process.exitCode=1};
  ok(await vis('#partB')&&await t('nameA')==='Incline Dumbbell Press'&&await t('nameB')==='Incline Fly','superset shows two parts');
  await p.clock.runFor(3100);await p.fill('#weight','20');await p.fill('#reps','12');await p.fill('#weight2','10');await p.fill('#reps2','15');await p.selectOption('#rpe','8.5');
  await p.fill('#note','bench at 30°');await p.click('#action');
- ok((await t('today')).includes('Set 1 20kg × 12 + 10kg × 15 @8.5'),'superset logged: '+await t('today'));
+ ok((await t('today')).includes('Set 1 20kg/hand × 12 + 10kg/hand × 15 @8.5'),'superset logged: '+await t('today'));
  ok((await p.textContent('.row[data-n="0"]')).includes('1/4 sets'),'bench shows 1/4 progress');
  // reload keeps note and progress
  await p.reload();await p.clock.runFor(300);

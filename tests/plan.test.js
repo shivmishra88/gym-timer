@@ -15,9 +15,9 @@ const BASE=process.env.BASE||'http://127.0.0.1:8765';
  // --- suggestions
  await p.selectOption('#day','mon');await p.click('#start');await p.clock.runFor(3100);
  ok(await p.inputValue('#weight')==='62.5'&&await p.inputValue('#reps')==='12','set 1: hit 12 → prefill 62.5 × 12');
- ok((await t('suggest')).includes('try 62.5 kg'),'set 1 hint: '+await t('suggest'));
+ ok((await t('suggest')).includes('try 62.5kg'),'set 1 hint: '+await t('suggest'));
  await p.click('#action');await p.click('#skip');await p.clock.runFor(3100);
- ok(await p.inputValue('#weight')==='65'&&(await t('suggest')).includes('Aim for 10 reps at 65 kg'),'set 2: missed 10 → hold 65, aim for 10: '+await t('suggest'));
+ ok(await p.inputValue('#weight')==='65'&&(await t('suggest')).includes('Aim for 10 reps at 65kg'),'set 2: missed 10 → hold 65, aim for 10: '+await t('suggest'));
  await p.selectOption('#inc','5');ok(await p.inputValue('#weight')==='65','increment change keeps hold suggestion');
  ok(await p.isDisabled('#editPlan'),'edit routine disabled during workout');
  accept();await p.click('#reset');
